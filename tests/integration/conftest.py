@@ -8,9 +8,12 @@ import asyncpg
 import httpx
 import pytest
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from slotline.clock import FrozenClock, SystemClock
 from slotline.config import Settings
 from slotline.main import create_app
+from tests.integration.helpers import AccountFactory, make_account_factory
 
 ROOT = Path(__file__).resolve().parents[2]
 TEST_DATABASE_URL = os.environ.get(
@@ -62,8 +65,14 @@ def make_settings() -> Callable[..., Settings]:
 
 
 @pytest.fixture
-async def app(make_settings: Callable[..., Settings]) -> AsyncIterator[FastAPI]:
-    application = create_app(make_settings())
+def clock() -> FrozenClock:
+    """Starts at the real current time; tests move it to expire tokens and locks."""
+    return FrozenClock(SystemClock().now())
+
+
+@pytest.fixture
+async def app(make_settings: Callable[..., Settings], clock: FrozenClock) -> AsyncIterator[FastAPI]:
+    application = create_app(make_settings(), clock=clock)
     yield application
     await application.state.engine.dispose()
     await application.state.redis.aclose()
@@ -74,3 +83,15 @@ async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture
+def make_account(client: httpx.AsyncClient) -> AccountFactory:
+    return make_account_factory(client)
+
+
+@pytest.fixture
+async def db(app: FastAPI) -> AsyncIterator[AsyncSession]:
+    """A separate session for asserting what is really in Postgres."""
+    async with app.state.session_factory() as session:
+        yield session

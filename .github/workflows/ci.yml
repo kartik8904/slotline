@@ -17,6 +17,7 @@ concurrency:
 
 env:
   UV_FROZEN: "1"
+  ENVIRONMENT: test
   PGUSER: slotline
   PGPASSWORD: slotline
   DATABASE_URL: postgresql+asyncpg://slotline:slotline@localhost:5432/slotline_test

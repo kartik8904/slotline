@@ -6,8 +6,8 @@ every session; you read the "What I should understand" lists before interviews.
 | # | Session | Status | PR |
 | --- | --- | --- | --- |
 | 1 | Skeleton | Done | #3 |
-| 2 | CI | In review | |
-| 3 | Tenancy and auth | Not started | |
+| 2 | CI | Done | #4 |
+| 3 | Tenancy and auth | In review | |
 | 4 | Catalogue | Not started | |
 | 5 | Availability | Not started | |
 | 6 | Bookings core | Not started | |
@@ -36,6 +36,37 @@ every session; you read the "What I should understand" lists before interviews.
 **Carried forward / TODO:**
 - Set `dev` as default branch and add rulesets (manual, `docs/START-HERE.md` section 2)
 - Decide the known gaps in `docs/PROJECT-OVERVIEW.md` section 14 before sessions 3, 7, 9
+
+## Session 3 — Tenancy and auth (2026-10-07)
+
+**PR:** (link after opening)
+
+**Built:**
+- Migration `0002` and models: `organizations`, `users`, `refresh_tokens`, `api_keys` (UUID v7 ids, `org_id`, timestamps); `ids.py` generates UUID v7 (Python 3.13 has none)
+- argon2id passwords (hashed off the event loop), HS256 access JWTs (15 min, `kid` header, key rotation), rotating 30-day refresh tokens in families, `sl_live_` API keys stored as SHA-256 hashes
+- Endpoints: `/auth/signup|login|refresh|logout`, `GET /me`, `POST /me/password`, `/api-keys` (owner), `/users` (owner); cursor pagination on both lists
+- `UnitOfWork`, org-scoped repositories, `repositories/credential_lookup.py` (the only pre-tenant queries), services, `deps.current_principal` (Bearer or `X-API-Key` → `Principal`), `require_owner`, `require_scope`, and a no-op `login_rate_limit` hook for session 7
+- Lockout (C2/C20) as a pure function in `domain/lockout.py`; `ENVIRONMENT` is now required and production needs real JWT keys (C24)
+- Tests: unit (ids, lockout, passwords, tokens, keys, config, repository scan), integration for every endpoint, a tenant-isolation scaffold generated from the OpenAPI spec, and concurrency tests (parallel refresh, parallel wrong passwords, two owners demoting each other, parallel signups)
+
+**Decisions** (plan.md / ADR updated?):
+- Plan clarifications C19–C28 added to `docs/plan.md` (staff passwords and `POST /me/password`, lockout window column, credential lookups, new error codes `email_exists` and `last_owner`, key scopes, environment and JWT keys, what a request trusts, strict refresh reuse, email and password rules, deactivation); plan tables and the error table updated
+- Dependencies added: `argon2-cffi`, `PyJWT` (both named in the plan's stack table)
+- `ci.yml` sets `ENVIRONMENT: test` for every job (it is required now)
+- `[tool.coverage.run] concurrency = ["greenlet", "thread"]` added: SQLAlchemy's async engine runs on greenlets, and without it coverage under-reported `services/` at about 65% when the real figure is above 95%. No threshold was changed.
+
+**Carried forward / TODO:**
+- Session 7: replace the body of `login_rate_limit` with the Redis limiter (also applied to signup); signup is open until then (C22)
+- Sessions 4+: register new path-parameter names in `ORG_B_IDS` and bodies in `SAMPLE_BODIES` in `tests/integration/test_tenant_isolation.py`; IDs in bodies or query strings need the scaffold extended
+- Session 9: email-based password reset and invites (C19); customer-facing tokens
+- Set `JWT_KEYS` and `JWT_ACTIVE_KID` in the UAT and production secret stores before session 12 deploys (the app won't start without them)
+
+**What I should understand:**
+1. Commit, then raise — a failed login or a reused refresh token must still write (the failure count, the family revocation), but raising inside `async with uow:` rolls back; so the service records the outcome in the block and raises after leaving it
+2. Atomic refresh rotation — one `UPDATE … WHERE revoked_at IS NULL RETURNING` decides the winner among parallel requests; every loser finds the token already revoked, which is what triggers family revocation
+3. Row locks instead of counters in SQL — login locks the user row (`FOR UPDATE`) and applies the pure lockout function, so ten parallel guesses count exactly ten; owner updates lock the active owners first so two owners can't demote each other
+4. The request trusts the database, not the token — the user's role and `is_active` are read on every request, and the JWT only says who and which refresh family
+5. Credential lookups are the one place without `org_id` — the credential reveals the tenant, and the repository scan test allows exactly that module
 
 ## Session 2 — CI (2026-10-07)
 

@@ -32,6 +32,8 @@ class ErrorCode(StrEnum):
     RATE_LIMITED = "rate_limited"
     INTERNAL_ERROR = "internal_error"
     SERVICE_UNAVAILABLE = "service_unavailable"
+    EMAIL_EXISTS = "email_exists"
+    LAST_OWNER = "last_owner"
 
 
 class AppError(Exception):
@@ -53,6 +55,37 @@ class AppError(Exception):
         self.detail = detail
         self.extra = extra or {}
         self.headers = headers or {}
+
+
+def unauthenticated() -> AppError:
+    """One answer for every credential failure, so responses never say which part was wrong."""
+    return AppError(
+        401,
+        ErrorCode.UNAUTHENTICATED,
+        "Unauthenticated",
+        "Missing, invalid or expired credentials.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def forbidden(detail: str) -> AppError:
+    return AppError(403, ErrorCode.FORBIDDEN, "Forbidden", detail)
+
+
+def not_found(detail: str = "Resource not found.") -> AppError:
+    """Also the answer for another tenant's ID: 404, never 403, so existence isn't leaked."""
+    return AppError(404, ErrorCode.NOT_FOUND, "Not found", detail)
+
+
+def field_error(field: str, message: str, error_type: str) -> AppError:
+    """A 422 validation_error for a rule only the service can check (for example, a password)."""
+    return AppError(
+        422,
+        ErrorCode.VALIDATION_ERROR,
+        "Validation error",
+        "One or more fields are invalid.",
+        extra={"errors": [{"field": field, "message": message, "type": error_type}]},
+    )
 
 
 def _request_id(request: Request) -> str | None:

@@ -4,6 +4,11 @@ import sys
 import structlog
 
 
+def mask_tail(value: str, keep: int = 4) -> str:
+    """Never log emails, phone numbers or tokens in full: keep only the last few characters."""
+    return "*" * max(len(value) - keep, 0) + value[-keep:]
+
+
 def configure_logging(level: str = "INFO") -> None:
     """One JSON line per event; request-scoped fields come from structlog contextvars."""
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level, force=True)

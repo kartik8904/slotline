@@ -13,6 +13,8 @@ dependencies = [
     "alembic",
     "redis",
     "structlog",
+    "argon2-cffi>=25.1.0",
+    "pyjwt>=2.15.1",
 ]
 
 [dependency-groups]
@@ -69,6 +71,9 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["slotline"]
+# SQLAlchemy's async engine runs on greenlets; without this, lines after an await on the
+# database are silently missing from the report
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 fail_under = 85

@@ -119,11 +119,18 @@ flowchart LR
 - A request can never *name* a tenant; URLs carry only resource IDs.
 - If org A asks for org B's booking ID, the query finds nothing → **404** (not 403, which
   would confirm the ID exists).
-- A test calls every endpoint as org A with org B's IDs and expects 404 everywhere.
+- A test calls every endpoint as org A with org B's IDs and expects 404 everywhere. It reads the
+  OpenAPI spec, so a new route that takes an ID can't skip the check.
+- The only queries that run *before* the org is known are the credential lookups (login by
+  email, refresh by token hash, API key by hash) in `repositories/credential_lookup.py`; they
+  find the org, and everything after uses it (C21).
+- The user row is read on every request, so deactivating a user or changing their role takes
+  effect immediately, not when their 15-minute access token expires (C25).
 
 Auth types: staff log in (15-minute access JWT + rotating 30-day refresh token); machines use
 hashed API keys (`sl_live_…`, shown once). Reusing an old refresh token revokes the whole
-token family (someone stole it).
+token family (someone stole it), and that revocation is committed even though the request
+fails (C26).
 
 ---
 
