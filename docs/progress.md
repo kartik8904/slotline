@@ -5,7 +5,7 @@ every session; you read the "What I should understand" lists before interviews.
 
 | # | Session | Status | PR |
 | --- | --- | --- | --- |
-| 1 | Skeleton | In review | feature/s01-skeleton |
+| 1 | Skeleton | In review | #3 |
 | 2 | CI | Not started | |
 | 3 | Tenancy and auth | Not started | |
 | 4 | Catalogue | Not started | |
@@ -39,7 +39,7 @@ every session; you read the "What I should understand" lists before interviews.
 
 ## Session 1 — Skeleton (2026-10-07)
 
-**PR:** (link added when opened)
+**PR:** https://github.com/kartik8904/slotline/pull/3
 
 **Built:**
 - uv project (Python 3.13), `src/slotline` layout, `create_app()` with pydantic-settings config
