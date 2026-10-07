@@ -31,6 +31,8 @@ every session; you read the "What I should understand" lists before interviews.
 **Decisions:**
 - `release` deploys to production; `main` is the stable record, updated after a release proves stable; hotfixes go into `release` (BRANCHING.md, plan.md updated)
 
+- Session 0 review (7 Oct): 18 gaps settled as Clarifications C1–C18 in `docs/plan.md` (login, lockout, duplicate customers, hold expiry exactly-once, idempotency crash safety, Redis fail-open, SSRF at delivery, session splits)
+
 **Carried forward / TODO:**
 - Set `dev` as default branch and add rulesets (manual, `docs/START-HERE.md` section 2)
 - Decide the known gaps in `docs/PROJECT-OVERVIEW.md` section 14 before sessions 3, 7, 9

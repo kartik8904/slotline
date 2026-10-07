@@ -45,6 +45,7 @@ The API never calls the email provider or webhook receivers directly: it writes 
 | Observability | structlog JSON logs, OpenTelemetry traces, Prometheus metrics, Sentry for errors | Every request traceable from log line to trace |
 | Testing | pytest, pytest-asyncio, httpx, a real Postgres (CI service container), Hypothesis, Schemathesis | Real Postgres in tests, property-based and contract tests |
 | Quality | ruff (lint + format), mypy (strict), pre-commit | Same checks locally and in CI |
+| CI security tools | pip-audit, gitleaks, Trivy (run in GitHub Actions only, not app dependencies) | Known-vulnerability, secret and image scanning; pre-approved, no need to ask |
 | Delivery | Docker multi-stage image, GitHub Actions, GHCR, a container host (Fly.io or Render now, AWS ECS + RDS in July per Brahmastra P9) | Cheap to start, same image moves to AWS later |
 
 Pin exact versions in uv.lock on day one and let Dependabot propose upgrades; check that your chosen managed Postgres allows the btree_gist extension before you pick it.
@@ -60,7 +61,7 @@ Every business table carries `org_id` (the tenant), `id` (UUID v7, sortable), `c
 | Table | Purpose | Key columns |
 | --- | --- | --- |
 | organizations | A tenant: one clinic or salon | name, slug, timezone, settings jsonb (hold minutes, reminder offsets) |
-| users | Staff who log in | email (unique per org), password_hash, role (owner, staff), is_active |
+| users | Staff who log in | email (unique across all organisations in v1, see C1), password_hash, role (owner, staff), is_active, failed_login_count, locked_until |
 | refresh_tokens | Rotating refresh tokens | user_id, token_hash, family_id, expires_at, revoked_at |
 | api_keys | Machine clients such as Vaani | name, prefix, key_hash, scopes, last_used_at, revoked_at |
 | providers | A person or room that can be booked | name, timezone, is_active |
@@ -68,8 +69,8 @@ Every business table carries `org_id` (the tenant), `id` (UUID v7, sortable), `c
 | provider_services | Which provider offers which service | provider_id, service_id |
 | availability_rules | Weekly working hours | provider_id, weekday (0–6), start_time, end_time, effective_from, effective_to |
 | time_off | Leave, holidays, breaks | provider_id, during tstzrange, reason |
-| customers | People who book | name, phone (E.164), email, notes, consent flags |
-| bookings | Holds and bookings | provider_id, service_id, customer_id, status, during, blocked, hold_expires_at, source (api, staff, waitlist, voice), version |
+| customers | People who book | name, phone (E.164, unique per org when set), email, notes, consent flags |
+| bookings | Holds and bookings | provider_id, service_id, customer_id, status, during, blocked, hold_expires_at, source (api, staff, waitlist, voice), version, needs_review_at |
 | booking_events | Append-only history | booking_id, type, actor, from_status, to_status, data jsonb |
 | waitlist_entries | Wanted a time that was full | service_id, provider_id (optional), customer_id, window tstzrange, status, position |
 | idempotency_keys | Safe retries | key, request_hash, status, response_code, response_body, expires_at |
@@ -169,7 +170,7 @@ All routes live under `/api/v1`, take and return JSON, and authenticate with eit
 | POST, GET, DELETE /webhooks | Owner | Manage endpoints; the signing secret is shown once |
 | GET /webhooks/{id}/deliveries | Owner | Delivery log with status codes |
 | POST /webhooks/{id}/deliveries/{did}/retry | Owner | Re-sends one delivery |
-| GET /health/live, /health/ready | Public | Liveness; readiness checks Postgres and Redis |
+| GET /health/live, /health/ready | Public | Liveness; readiness checks Postgres only (Redis is reported, not required, see C12) |
 | GET /metrics | Internal | Prometheus metrics, not exposed publicly |
 
 ### Availability, the one hard read
@@ -221,6 +222,8 @@ Every error uses one shape, Problem Details (RFC 9457) with a stable `code` fiel
 | 404 | not_found | Unknown ID or another tenant's ID (never 403, to avoid leaking existence) |
 | 409 | slot_unavailable | Exclusion constraint fired |
 | 409 | invalid_transition | e.g. confirming a cancelled booking |
+| 409 | customer_exists | A customer with this phone already exists (C3) |
+| 409 | time_off_conflict | Time off overlaps an active booking (C4) |
 | 409 | request_in_progress | Same idempotency key still running |
 | 410 | hold_expired | Confirming after the hold ran out |
 | 412 | precondition_failed | `If-Match` version mismatch |
@@ -488,6 +491,34 @@ You should be able to answer "is it working, and if not, where?" in under two mi
 - **Runbook** (`docs/runbook.md`): one entry per alert above, saying what it means, how to check, and how to fix it. Include "worker stuck", "database at connection limit", "email provider down", "roll back a deploy" and "ship a hotfix".
 - **Status:** a free uptime monitor hitting `/health/ready` every minute, alerting your email or Telegram.
 - **Data retention:** cancelled and completed bookings kept 2 years, then customer fields anonymised by a scheduled job.
+
+## Clarifications (decided 7 Oct 2026, after the Session 0 review)
+
+These settle gaps found when reviewing this plan. Where a clarification and an earlier section
+differ, **the clarification wins**. Each lists the session that implements it.
+
+| # | Topic | Decision | Session |
+| --- | --- | --- | --- |
+| C1 | Login when two orgs share an email | In v1 a staff email is unique across all organisations (one account belongs to one org). `POST /auth/login` takes `{email, password}`. Multi-org accounts are a stretch goal. | 3 |
+| C2 | Lockout vs rate limit | Two separate mechanisms. Redis rate limit: 10 login attempts a minute per IP. Account lockout: `users.failed_login_count` and `users.locked_until`; 10 failures within 15 minutes locks the account for 15 minutes; a success resets the count. A locked account returns the same `401 unauthenticated` as a wrong password. | 3 (lockout), 7 (rate limit) |
+| C3 | Duplicate customers | Partial unique index on `(org_id, phone) WHERE phone IS NOT NULL`. Creating a duplicate returns `409 customer_exists` with the existing customer's `id` in the body. | 4 |
+| C4 | Time-off overlap | Time off is rejected with `409 time_off_conflict` if it overlaps any **active** booking (held with an unexpired hold, or confirmed), unless `force=true`. | 4, wired in 6 |
+| C5 | Time zones | Default for new orgs and providers is `Asia/Kolkata`. Europe/Dublin appears only in tests, because India has no DST and the DST logic still needs proving. | 1, 5 |
+| C6 | Availability and buffers | `GET /availability` returns start times; each slot has the customer-visible `start` and `end` (service duration only). Buffers are never exposed; they only affect which starts are free. | 5 |
+| C7 | `POST /bookings` | Inserts one row directly with `status = confirmed` (no held row in between). The exclusion constraint guards it exactly like a hold. It writes `booking.confirmed` to the outbox. | 6 |
+| C8 | Who expires a hold | One conditional statement, used by both the inline expiry (rule 3) and the worker job: `UPDATE bookings SET status='expired', version=version+1 WHERE id=… AND status='held' AND hold_expires_at < now() RETURNING id`. Only the transaction whose UPDATE returns a row writes the `booking_events` row and the `booking.expired` outbox event, in that same transaction. The row lock makes this exactly-once. | 6, 8 |
+| C9 | Reschedule | Status stays `confirmed`; `during`, `blocked` and `version` (+1) change in one UPDATE. Writes a `booking_events` row of type `rescheduled` with old and new times, and a `booking.rescheduled` outbox event. A held booking can't be rescheduled (`409 invalid_transition`); cancel and re-hold instead. | 7 |
+| C10 | Idempotency and crashes | The middleware inserts the key as `in_progress` with `locked_until = now() + 60 s` in its own short transaction. The **service** marks the key `completed` with the response **inside the same transaction as the booking change**, so the two commit together. If the process crashes before commit, nothing was written and a retry after `locked_until` runs again safely. Before `locked_until`, a retry gets `409 request_in_progress`. | 7 |
+| C11 | Waitlist offer holds | A waitlist offer is a normal hold with `source = waitlist` and `hold_expires_at = now() + org.settings.waitlist_offer_minutes` (default 15). Normal holds use `org.settings.hold_minutes` (default 5). No other difference. | 10 |
+| C12 | Redis down | The rate limiter **fails open**: requests continue, a warning is logged, and `rate_limiter_errors_total` increases (alert on any increase). `/health/ready` checks Postgres only, so a Redis outage doesn't take the API out of service; it reports Redis status in the response body. | 7, 11 |
+| C13 | Auto no-show flag | Column `bookings.needs_review_at timestamptz`. The job sets it 30 minutes after `upper(during)` if the booking is still `confirmed`, and writes a `booking_events` row `flagged_for_review`. `GET /bookings?needs_review=true` lists them. Completing or marking no-show clears it. | 8 (column, job), 9 (filter) |
+| C14 | Changing reminder offsets | New offsets apply to bookings confirmed or rescheduled **after** the change. Already scheduled reminders keep their times. | 9 |
+| C15 | SSRF at delivery time | Validate webhook URLs when saved (HTTPS, public host) **and** again at each delivery: resolve DNS, reject private, loopback and link-local addresses, then connect to the checked IP with the original Host header and TLS name, so DNS can't change in between. No redirects are followed. | 10 |
+| C16 | Load targets | The **gate** is the release-check run on a local stack in GitHub Actions: p95 for `POST /holds` under 300 ms at 50 requests a second. The nightly run against UAT only **reports** numbers (no pass/fail), because UAT runs on the smallest instances. | 11, 12 |
+| C17 | Large sessions | Sessions 6–10 may be split into two PRs (`feature/s06a-…`, `feature/s06b-…`), each reviewable on its own and each passing CI. Suggested splits: 6a schema + holds + constraint test, 6b confirm + direct book + events; 8a jobs table + worker loop, 8b outbox relay + scheduler + hold expiry; 10a waitlist, 10b webhooks. | 6–10 |
+| C18 | Status checks before Session 2 | Session 1's PR merges with only the `branch-flow` check, because CI doesn't exist yet. You run `make lint` and `make test` locally and paste the output in the PR. | 1 |
+
+Session 0 (the setup check in `docs/session-prompts.md`) is optional and isn't part of the 12-session table.
 
 ## Build plan with Claude cloud sessions
 
