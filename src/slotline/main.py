@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from slotline.api.v1 import router as v1_router
 from slotline.clock import Clock, SystemClock
@@ -11,6 +12,7 @@ from slotline.db import create_engine
 from slotline.errors import register_error_handlers
 from slotline.logging_config import configure_logging
 from slotline.middleware.request_id import RequestIdMiddleware
+from slotline.security.tokens import JwtKeyring
 
 
 def create_app(settings: Settings | None = None, clock: Clock | None = None) -> FastAPI:
@@ -32,6 +34,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
     app.state.settings = settings
     app.state.clock = clock or SystemClock()
     app.state.engine = engine
+    app.state.session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    app.state.keyring = JwtKeyring.from_settings(settings)
     app.state.redis = redis
 
     app.add_middleware(RequestIdMiddleware)
