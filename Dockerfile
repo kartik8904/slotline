@@ -14,6 +14,9 @@ COPY alembic ./alembic
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 FROM python:3.13-slim AS runtime
+# pip is not needed at runtime; its vendored urllib3/msgpack/setuptools trigger HIGH CVEs in image scans
+RUN python -m pip uninstall -y pip \
+ && rm -rf /usr/local/lib/python3.13/site-packages/pip*
 RUN groupadd --system --gid 10001 app \
  && useradd --system --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app
 WORKDIR /app
