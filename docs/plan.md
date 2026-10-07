@@ -416,9 +416,9 @@ The image is built once per commit, so what passed UAT is byte for byte what rea
 | Job | Steps | Fails the build when |
 | --- | --- | --- |
 | lint | `uv sync --frozen`, `ruff check`, `ruff format --check` | Any lint or format issue |
-| types | `mypy --strict src/` | Any type error |
-| test | Postgres 17 + Redis service containers, `alembic upgrade head`, `pytest -n auto --cov` | A failing test or coverage under 85% |
-| concurrency | Same services, `pytest -m concurrency` with a 20-connection pool | Any race test fails |
+| types | `mypy` (strict via `pyproject.toml`; same scope as `make lint`: `src`, `tests`, `alembic`) | Any type error |
+| test | Postgres 17 + Redis service containers, `alembic upgrade head`, `pytest` with coverage (plain `pytest`; `-n auto` / pytest-xdist deferred until the suite is slow enough to justify per-worker databases) | A failing test or coverage under 85% |
+| concurrency | Same services, `pytest -m concurrency` with a 20-connection pool (session 2 ships one test: 50 concurrent `/health/ready` calls) | Any race test fails |
 | migrations | upgrade → downgrade -1 → upgrade; `alembic check` for model drift | A migration can't round-trip, or models and migrations disagree |
 | contract | Start the app, run Schemathesis against `/openapi.json` | Any 500 or schema violation |
 | security | `pip-audit`, `gitleaks` for secrets, build the image and scan it with Trivy | A known high or critical vulnerability, or a committed secret |
