@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: slotline
+      POSTGRES_PASSWORD: slotline
+      POSTGRES_DB: slotline
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slotline -d slotline"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # web UI
+
+  api:
+    build: .
+    environment: &app-env
+      ENVIRONMENT: local
+      DATABASE_URL: postgresql+asyncpg://slotline:slotline@postgres:5432/slotline
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Placeholder until session 8: start with `docker compose --profile worker up`.
+  # Session 8 removes the profile.
+  worker:
+    build: .
+    profiles: ["worker"]
+    command: ["python", "-m", "slotline.worker.main"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

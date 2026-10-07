@@ -38,7 +38,19 @@ Docker · GitHub Actions
 
 ## Run locally
 
-_Filled in after session 1._
+Needs Python 3.13, [uv](https://docs.astral.sh/uv/) and Docker.
+
+```bash
+cp .env.example .env                              # local config, never committed
+docker compose up -d postgres redis mailpit       # Postgres 17, Redis 7, Mailpit
+uv sync                                           # install dependencies
+make migrate                                      # alembic upgrade head
+make dev                                          # API on :8000, Swagger at /docs
+```
+
+Other commands: `make test`, `make lint`. `docker compose up` starts the whole stack except
+the worker, which is a placeholder until session 8 (`docker compose --profile worker up`).
+Mailpit's inbox is at http://localhost:8025.
 
 ## Results
 
