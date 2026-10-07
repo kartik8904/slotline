@@ -104,7 +104,7 @@ Booking looks simple but breaks in real life:
 
 **Operations**
 - Health checks, structured logs, traces, metrics, error tracking
-- Seven-check CI, automatic staging deploy, one-click production deploy, rollback by image SHA
+- Branch flow feature → dev → uat → release → main; seven-check CI on every PR; automatic UAT deploy; one-click production deploy from main; rollback by image SHA
 
 ## 7. A day in the life (end-to-end example)
 
@@ -177,7 +177,7 @@ All under `/api/v1`. About 30 endpoint groups:
 | Tenant isolation | Every endpoint called with another tenant's IDs → 404 |
 | API matches its spec | Schemathesis fuzzing, no 500s |
 | Fast enough | p95 for holds < 300 ms at 50 requests/second |
-| Safe delivery | 7 CI checks, staging + smoke tests, manual approval, rollback by SHA |
+| Safe delivery | 4-level branch flow, 7 CI checks, UAT + smoke tests, manual approval, rollback by SHA |
 | Tested | 85% coverage overall, 95% for services and domain |
 
 ## 13. Out of scope for v1
@@ -212,4 +212,4 @@ The plan is detailed but these are **not yet specified**. Decide each before the
 ## 16. Timeline
 
 About 6 weeks at ~22 hours a week, 12 sessions, 2 per week. Session details and prompts are in
-`docs/session-prompts.md`; progress is logged in `docs/progress.md`.
+`docs/session-prompts.md`, the branch flow in `docs/BRANCHING.md`; progress is logged in `docs/progress.md`.

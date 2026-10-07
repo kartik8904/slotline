@@ -18,8 +18,17 @@ Log of finished sessions: `docs/progress.md`. Read its last entry at the start o
 - One session = one PR = one row of the 12-session table in `docs/plan.md`.
 - **First reply is always a plan:** files you'll create or change, the tests you'll add, and
   anything in the plan you think is wrong or unclear. Then stop and wait for my OK.
-- Work on a branch named `s<NN>-<short-name>` (e.g. `s06-bookings-core`).
-- Conventional commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`). Squash-merged.
+- Conventional commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`).
+
+## Branches (full rules: `docs/BRANCHING.md`)
+- Flow: `feature/*` → `dev` → `uat` → `release` → `main`. `main` is production.
+- Session work: branch from the latest `dev` as `feature/s<NN>-<short-name>`
+  (e.g. `feature/s06-bookings-core`); other changes use `fix/`, `docs/` or `chore/`.
+  Open the PR with base **`dev`**. Never target `uat`, `release` or `main` from a feature branch.
+- Never commit or push directly to `dev`, `uat`, `release` or `main`, and never merge PRs. I merge.
+- Promotions (`dev`→`uat`→`release`→`main`) and hotfixes happen only when I ask, as PRs
+  between those branches, never squashed or rebased.
+- Workflows that deploy: `uat` branch → UAT environment, `main` branch → production.
 - Before saying a task is done: `make lint && make test` pass. Paste the summary lines in the PR.
 - PR description: what changed, why, how to test it, test output, and **"Things to understand"**:
   3–5 bullets on the trickiest code in the PR, written so a junior engineer could explain them.

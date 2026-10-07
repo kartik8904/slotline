@@ -8,14 +8,27 @@ waitlist offers and signed webhooks.
 
 ## Docs
 
-| Read this | For |
+Read in this order:
+
+| # | Read this | For |
+| --- | --- | --- |
+| 1 | [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | What Slotline is, who uses it, features, known gaps |
+| 2 | [docs/architecture.md](docs/architecture.md) | How the API, worker and Postgres fit together (diagrams) |
+| 3 | [docs/BRANCHING.md](docs/BRANCHING.md) | Branch flow: feature → dev → uat → release → main |
+| 4 | [docs/LOCAL-SETUP.md](docs/LOCAL-SETUP.md) | Clone and run on your Mac with Claude Code |
+| 5 | [docs/START-HERE.md](docs/START-HERE.md) | Cloud setup and the per-session loop |
+| 6 | [docs/session-prompts.md](docs/session-prompts.md) | Prompt for each build session and each promotion |
+| — | [docs/plan.md](docs/plan.md) | Full specification |
+| — | [docs/progress.md](docs/progress.md) | What's been built so far |
+
+## Branches
+
+| Branch | Purpose |
 | --- | --- |
-| [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | What Slotline is, who uses it, features, known gaps |
-| [docs/START-HERE.md](docs/START-HERE.md) | Setting up and building with Claude cloud sessions |
-| [docs/architecture.md](docs/architecture.md) | How the API, worker and Postgres fit together (diagrams) |
-| [docs/plan.md](docs/plan.md) | Full specification |
-| [docs/session-prompts.md](docs/session-prompts.md) | Prompts for each build session |
-| [docs/progress.md](docs/progress.md) | What's been built so far |
+| `dev` (default) | Integration; every feature PR lands here |
+| `uat` | Testing; deploys to UAT |
+| `release` | Release candidate |
+| `main` | Production |
 
 ## Stack
 

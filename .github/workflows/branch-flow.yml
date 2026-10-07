@@ -1,0 +1,40 @@
+# Fails any pull request that skips a level of the branch flow.
+# feature/* → dev → uat → release → main  (hotfix/* → main; main → release/uat/dev back-merges)
+# See docs/BRANCHING.md. Make "branch-flow" a required status check.
+name: branch-flow
+
+on:
+  pull_request:
+    branches: [dev, uat, release, main]
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+jobs:
+  branch-flow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check source and target branches
+        env:
+          HEAD: ${{ github.head_ref }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          echo "PR: $HEAD → $BASE"
+          ok=false
+          case "$BASE" in
+            dev)
+              case "$HEAD" in
+                feature/*|fix/*|docs/*|chore/*|test/*|refactor/*|ci/*|dependabot/*|main) ok=true ;;
+              esac ;;
+            uat)
+              case "$HEAD" in dev|main) ok=true ;; esac ;;
+            release)
+              case "$HEAD" in uat|main|chore/release-*) ok=true ;; esac ;;
+            main)
+              case "$HEAD" in release|hotfix/*) ok=true ;; esac ;;
+          esac
+          if [ "$ok" != true ]; then
+            echo "::error::'$HEAD' can't merge into '$BASE'. Allowed: feature|fix|docs|chore|test|refactor|ci/* → dev, dev → uat, uat → release, release|hotfix/* → main, main → dev|uat|release (back-merge). See docs/BRANCHING.md."
+            exit 1
+          fi
+          echo "Allowed."

@@ -1,66 +1,45 @@
-# Start here: building Slotline with Claude cloud sessions
+# Start here
 
-This is the one-time setup and the loop you repeat for each of the 12 sessions.
-Read it top to bottom once; after that you only need **section 4** and `docs/session-prompts.md`.
+The order to read things, the one-time setup, and the loop you repeat for each of the 12
+sessions. After the first week you only need section 4 and `docs/session-prompts.md`.
 
-| File | What it's for | When you read it |
-| --- | --- | --- |
-| `docs/START-HERE.md` | Setup + the working loop (this file) | Once, then section 4 each session |
-| `docs/plan.md` | The full spec (export of your Slotline Build Plan doc) | When Claude's plan looks off, check it here |
-| `docs/architecture.md` | How everything flows, with diagrams | Before sessions 1, 6, 8 and before interviews |
-| `docs/session-prompts.md` | Copy-paste prompt for every session | Start of every session |
-| `docs/progress.md` | Log of what each session built and what you learned | End of every session |
-| `CLAUDE.md` | Rules Claude reads automatically every session | Claude reads it; you edit it when a rule is missing |
+## 1. What to read, in this order
 
----
+| # | File | Why | Time |
+| --- | --- | --- | --- |
+| 1 | `docs/PROJECT-OVERVIEW.md` | What Slotline is, who uses it, features, known gaps | 15 min |
+| 2 | `docs/architecture.md` | How the API, worker and Postgres flow, with diagrams | 30 min |
+| 3 | `docs/BRANCHING.md` | feature → dev → uat → release → main | 10 min |
+| 4 | `docs/LOCAL-SETUP.md` | Get it onto your Mac | 20 min (doing) |
+| 5 | This file, sections 2–4 | Cloud setup and the working loop | 20 min (doing) |
+| 6 | `docs/session-prompts.md` | The prompt for each session | per session |
+| — | `docs/plan.md` | The full spec. Skim once; look things up when a plan looks wrong | reference |
+| — | `docs/progress.md` | What's done; updated after every merge | per session |
+| — | `CLAUDE.md` | Rules Claude follows automatically. Edit it when Claude repeats a mistake | reference |
 
-## 1. Create the repository (15 min)
+## 2. One-time GitHub setup (15 min, by hand)
 
-1. On GitHub create a **new empty repo** named `slotline` (private is fine; make it public before you share it in your portfolio).
-2. Copy every file from this starter kit into the repo root, keeping the folders:
+The branches `dev`, `uat` and `release` already exist. On github.com/kartik8904/slotline:
 
-   ```text
-   slotline/
-   ├── CLAUDE.md
-   ├── README.md
-   ├── .claude/settings.json
-   ├── .github/pull_request_template.md
-   ├── scripts/session-start.sh
-   └── docs/
-       ├── START-HERE.md
-       ├── plan.md              ← you add this (step 3)
-       ├── architecture.md
-       ├── session-prompts.md
-       ├── progress.md
-       └── adr/0000-template.md
-   ```
+1. **Settings → General → Default branch:** switch to `dev`.
+2. **Settings → General → Pull Requests:** allow merge commits and squash merging; disable
+   rebase merging; turn on "Automatically delete head branches".
+3. **Settings → Rules → Rulesets:** add the rules in `docs/BRANCHING.md` ("GitHub settings to
+   click") for `dev`, `uat`, `release`, `main`. Require the `branch-flow` check now; add the
+   seven CI checks after session 2.
+4. Install the **Claude GitHub App** on this repo only: <https://github.com/apps/claude>.
+   It's needed for cloud sessions on a private repo and for Auto-fix.
 
-3. **Add `docs/plan.md`**: open your *Slotline Build Plan* doc on claude.ai → download/export as **Markdown** → save it as `docs/plan.md`.
-   The three diagrams in the doc export as `[embedded content]` placeholders; that's fine, the same diagrams are in `docs/architecture.md` as Mermaid.
-4. Make the hook script executable and push:
+## 3. Cloud environment on claude.ai/code (10 min)
 
-   ```bash
-   chmod +x scripts/session-start.sh
-   git add . && git commit -m "docs: project plan, architecture and Claude setup" && git push
-   ```
-
-## 2. Connect Claude to GitHub (10 min)
-
-1. Go to **claude.ai/code** and connect your GitHub account.
-2. Install the **Claude GitHub App** and give it access to the `slotline` repo only.
-3. Select `slotline` as the repository for new sessions.
-
-## 3. Configure the cloud environment (15 min)
-
-In claude.ai/code, create (or edit) the environment you'll use for Slotline:
+1. Go to **claude.ai/code**, connect GitHub, and select `kartik8904/slotline`.
+2. Create or edit the environment you'll use for Slotline:
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| Network access | **Trusted** | Reaches PyPI, GitHub and Docker Hub so `uv sync` and `docker pull` work |
-| Setup script | see below | Pre-pulls images once; cached for later sessions |
-| Environment variables | none needed yet | Real secrets go to GitHub Environments and the host in session 12, never here |
-
-**Setup script** (paste into the environment's setup script box):
+| Network access | **Trusted** | Reaches PyPI, GitHub and Docker Hub |
+| Setup script | below | Pre-pulls images once; the environment cache keeps them |
+| Environment variables | none yet | Real secrets go to GitHub Environments in session 12, never here |
 
 ```bash
 #!/usr/bin/env bash
@@ -69,63 +48,63 @@ docker pull redis:7 || true
 docker pull axllent/mailpit || true
 ```
 
-The repo's `.claude/settings.json` adds a **SessionStart hook** that runs `scripts/session-start.sh` every time a session starts.
-It runs `uv sync` once `pyproject.toml` exists and starts Postgres, Redis and Mailpit once `compose.yaml` exists, so in session 1 it does nothing, and from session 2 on the stack is already up when Claude starts.
+The repo's `.claude/settings.json` runs `scripts/session-start.sh` at the start of every
+cloud session: `uv sync` once `pyproject.toml` exists, and `docker compose up -d postgres
+redis mailpit` once `compose.yaml` exists. In session 1 it does nothing; from session 2 on,
+the stack is already running when Claude starts. On your laptop it does nothing at all.
 
-> If a session reports that Docker isn't running or images can't be pulled, tell Claude:
-> "Docker isn't available here; start the pre-installed PostgreSQL 17 and Redis instead, create the slotline database, and point DATABASE_URL at it for this session only." Don't let it change the code to work around it.
-
-## 4. The loop for every session (2 per week)
+## 4. The loop for every session (about 2 a week)
 
 ```mermaid
 flowchart LR
-  A[Open new session<br/>on slotline repo] --> B[Paste prompt N from<br/>docs/session-prompts.md]
-  B --> C[Claude replies with<br/>plan + test list]
-  C --> D{Matches plan.md<br/>and done-when?}
-  D -- no --> E[Correct it in one message] --> C
+  A[New cloud session<br/>on dev] --> B[Paste prompt N]
+  B --> C[Claude: plan + test list]
+  C --> D{Matches plan.md<br/>and Done when?}
+  D -- no --> E[Correct it] --> C
   D -- yes --> F[Reply: OK, go]
-  F --> G[Claude builds, runs<br/>make lint + make test,<br/>opens PR]
-  G --> H[You review the diff<br/>+ ask 'explain X']
+  F --> G[Claude builds on feature/sNN,<br/>runs lint + tests,<br/>opens PR into dev]
+  G --> H[Turn on Auto-fix;<br/>review the diff;<br/>ask 'explain X']
   H --> I{CI green and you can<br/>explain every line?}
-  I -- no --> J[Comment on PR /<br/>ask in session] --> G
-  I -- yes --> K[Squash-merge]
-  K --> L[Run the 'progress' prompt:<br/>update docs/progress.md]
+  I -- no --> J[Comment / ask] --> G
+  I -- yes --> K[Squash and merge<br/>into dev]
+  K --> L[Progress prompt →<br/>docs/progress.md]
 ```
 
-What you do in each step:
+1. **New session** on claude.ai/code, repo `slotline`, branch **`dev`**. One session = one PR.
+2. **Paste the prompt** from `docs/session-prompts.md`.
+3. **Check the plan** before any code: compare it with that session's *Done when* line and
+   the plan section. This is where you learn the most; spend 10 minutes here.
+4. Reply `OK, go`, or correct it.
+5. Claude opens a PR from `feature/sNN-name` into **`dev`**. Open the CI status bar and turn
+   on **Auto-fix** so Claude reacts to failing checks and your review comments.
+6. **Review** on GitHub. For anything unclear, ask in the session:
+   `Explain <file>:<lines> like I'll be asked about it in an interview.`
+   To run it yourself: `git fetch && git switch feature/sNN-name && make test` (see LOCAL-SETUP).
+7. **Squash and merge** into `dev` only when CI is green and you can explain every line.
+8. Run the **progress prompt** so `docs/progress.md` records what was built and learned.
 
-1. **New session** on claude.ai/code with the `slotline` repo selected. One session = one PR. Don't reuse a session for the next PR.
-2. **Paste the prompt** for that session from `docs/session-prompts.md`.
-3. **Check the plan** Claude writes before any code. Compare it with the session's *Done when* line and the plan section. This is where you learn the most; spend 10 minutes here.
-4. Reply `OK, go` (or corrections).
-5. **Review the PR** on GitHub. For anything you can't explain, ask in the session: `Explain <file>:<lines> like I'll be asked about it in an interview.`
-6. Turn on **Auto-fix** for the PR so Claude reacts to failing CI and your review comments.
-7. **Merge only when** CI is green and you can explain every line (your Brahmastra rule).
-8. **Close the loop** with the progress prompt (bottom of `session-prompts.md`). It updates `docs/progress.md` with what was built, decisions, and what to remember.
+**Promote** at the milestones in `docs/BRANCHING.md` (v0.1.0 after sessions 1–2, and so on)
+using the promotion prompts at the bottom of `docs/session-prompts.md`.
 
-## 5. GitHub settings to do by hand
+## 5. Rules of thumb
 
-These can't be done from a session; do them right after session 2 merges:
-
-- **Branch protection on `main`**: Settings → Branches → add rule → require a pull request, require status checks (select all seven CI jobs once they've run once), block force pushes.
-- **Dependabot**: comes from `.github/dependabot.yml` (session 2); enable Dependabot alerts in Settings → Security.
-- **Environments** (session 12): create `staging` and `production`; on `production`, add yourself as required reviewer. Put host tokens and secrets there.
-
-## 6. Rules of thumb
-
-- **Small asks beat big asks.** If a session is going long, ask Claude to open the PR with what's done and finish the rest in the next session.
-- **The plan is the source of truth.** If you change a decision, update `docs/plan.md` (or add an ADR) in the same PR, so later sessions don't build on the old version.
-- **Add to CLAUDE.md when Claude repeats a mistake.** One line per rule.
-- **Never paste secrets into a session.** Use `.env` locally (git-ignored) and GitHub Environments for deploys.
+- **Small asks beat big asks.** If a session runs long, ask Claude to open the PR with what's
+  done and continue in a new session.
+- **The plan is the source of truth.** If you change a decision, update `docs/plan.md` or add
+  an ADR in the same PR.
+- **Add a line to CLAUDE.md** whenever Claude repeats a mistake.
+- **Never paste secrets into a session.** Use `.env` locally (git-ignored) and GitHub
+  Environments for deploys.
+- **Decide the known gaps** in `docs/PROJECT-OVERVIEW.md` section 14 before the session listed.
 - If a week slips: cut session 11 polish, never tests.
 
-## 7. Schedule (about 6 weeks at 2 sessions a week)
+## 6. Schedule (about 6 weeks)
 
-| Week | Sessions | Milestone |
+| Week | Sessions | Release |
 | --- | --- | --- |
-| 1 | 1 Skeleton · 2 CI | Repo runs locally, CI blocks bad PRs |
-| 2 | 3 Auth · 4 Catalogue | Tenants, staff, providers, services |
-| 3 | 5 Availability · 6 Bookings core | **200-concurrent test passes** |
-| 4 | 7 Lifecycle · 8 Worker | Reschedule/cancel, jobs run exactly once |
-| 5 | 9 Notifications · 10 Waitlist + webhooks | Real automation |
-| 6 | 11 Observability · 12 Ship it | Live URL, README results, build-in-public post |
+| 1 | 0 Check · 1 Skeleton · 2 CI | v0.1.0 (proves the whole branch flow) |
+| 2 | 3 Auth · 4 Catalogue | |
+| 3 | 5 Availability · 6 Bookings core | v0.2.0 after 5, v0.3.0 after 6–7 |
+| 4 | 7 Lifecycle · 8 Worker | |
+| 5 | 9 Notifications · 10 Waitlist + webhooks | v0.4.0 |
+| 6 | 11 Observability · 12 Ship it | v1.0.0 |

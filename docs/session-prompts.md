@@ -1,7 +1,10 @@
 # Session prompts
 
-Open a **new** session on claude.ai/code with the `slotline` repo, paste the prompt for
-that session, and follow the loop in `docs/START-HERE.md` section 4.
+Open a **new** session on claude.ai/code with the `slotline` repo **on the `dev` branch**,
+paste the prompt for that session, and follow the loop in `docs/START-HERE.md` section 4.
+Every session works on `feature/sNN-name` branched from `dev` and opens its PR into `dev`
+(see `docs/BRANCHING.md`). Promotions to `uat`, `release` and `main` use the promotion
+prompts at the bottom.
 
 Every prompt follows the same shape: read context → plan → wait for OK → build → test → PR.
 After merging, run the **progress prompt** at the bottom.
@@ -11,11 +14,13 @@ After merging, run the **progress prompt** at the bottom.
 ## Session 0 — check the setup (optional, 10 min, no code)
 
 ```text
-Read CLAUDE.md, docs/plan.md, docs/architecture.md and docs/START-HERE.md.
-Don't write any code. Tell me:
+Read CLAUDE.md, docs/PROJECT-OVERVIEW.md, docs/plan.md, docs/architecture.md,
+docs/BRANCHING.md and docs/START-HERE.md. Don't write any code. Tell me:
 1. In 5 bullets, what Slotline is and how the API, worker and Postgres fit together.
 2. Anything in docs/plan.md that is contradictory, ambiguous or risky.
-3. Whether docker, uv and python 3.13 are available in this environment (run the version commands).
+3. Whether docker, docker compose, uv and python 3.13 are available here (run the version
+   commands), and whether you can pull postgres:17.
+4. Which branch you're on (it should be dev) and confirm you understand the branch flow.
 ```
 
 ---
@@ -40,7 +45,7 @@ Done when: `make dev` serves /docs; `docker build .` works; `make lint` and `mak
 pass with at least the health tests.
 
 First reply with your plan: the file list and the tests you'll add. Wait for my OK.
-Then implement on branch s01-skeleton, run make lint and make test, and open a PR titled
+Then implement on branch feature/s01-skeleton (from dev), run make lint and make test, and open a PR into dev titled
 "feat: project skeleton" following the PR rules in CLAUDE.md.
 ```
 
@@ -54,17 +59,19 @@ docs/progress.md.
 
 Goal: session 2, CI.
 Build: .github/workflows/ci.yml with the seven jobs from the plan (lint, types, test,
-concurrency, migrations, contract, security). Postgres 17 + Redis service containers,
+concurrency, migrations, contract, security), triggered on pull_request into and push to
+dev, uat, release and main. Keep the existing branch-flow.yml. Postgres 17 + Redis service containers,
 uv cache, `uv sync --frozen`. The contract job may be a placeholder that starts the app and
 fetches /openapi.json; concurrency may run an empty marker for now but must be wired.
 Security: pip-audit, gitleaks, Trivy image scan failing on HIGH/CRITICAL.
-Also .github/dependabot.yml (pip, github-actions, docker; weekly) and a short
-docs/branch-protection.md listing the exact GitHub settings I must click.
+Also .github/dependabot.yml (pip, github-actions, docker; weekly; target-branch: dev).
+Then update the "GitHub settings to click" section of docs/BRANCHING.md with the exact
+names of the seven new status checks so I can mark them required.
 
 Done when: all seven jobs pass on the PR. Then push one extra commit with a deliberate lint
 error, confirm the lint job fails, and revert it.
 
-Plan first, wait for my OK. Branch s02-ci. PR "ci: seven-check pipeline and dependabot".
+Plan first, wait for my OK. Branch feature/s02-ci from dev. PR into dev: "ci: seven-check pipeline and dependabot".
 ```
 
 ---
@@ -90,7 +97,7 @@ the OpenAPI spec, calls each endpoint as org A with org B's IDs and expects 404.
 
 Done when: token reuse revokes the family; the tenant-isolation scaffold runs in CI.
 
-Plan first, wait for my OK. Branch s03-auth. PR "feat: tenancy, staff auth and api keys".
+Plan first, wait for my OK. Branch feature/s03-auth from dev. PR into dev: "feat: tenancy, staff auth and api keys".
 ```
 
 ---
@@ -116,7 +123,7 @@ replace is atomic.
 Done when: weekly hours replace in one call; time-off overlap rule has a test (marked
 xfail until session 6 if needed).
 
-Plan first, wait for my OK. Branch s04-catalogue. PR "feat: providers, services, hours,
+Plan first, wait for my OK. Branch feature/s04-catalogue from dev. PR into dev: "feat: providers, services, hours,
 time off and customers".
 ```
 
@@ -141,7 +148,7 @@ DST-change week, buffers, minimum notice, 31-day cap → 422. Integration test f
 
 Done when: property tests pass, including the DST week and buffers.
 
-Plan first, wait for my OK. Branch s05-availability. PR "feat: computed availability".
+Plan first, wait for my OK. Branch feature/s05-availability from dev. PR into dev: "feat: computed availability".
 ```
 
 ---
@@ -171,8 +178,8 @@ Done when: the 200-concurrent test gives exactly {201: 1, 409: 199} and the DB h
 active booking.
 
 In the PR "Things to understand" section, explain the exclusion constraint and why
-SELECT-then-INSERT would fail. Plan first, wait for my OK. Branch s06-bookings-core.
-PR "feat: holds and bookings with exclusion-constraint guarantee".
+SELECT-then-INSERT would fail. Plan first, wait for my OK. Branch feature/s06-bookings-core from dev.
+PR into dev: "feat: holds and bookings with exclusion-constraint guarantee".
 ```
 
 ---
@@ -195,7 +202,7 @@ session 8), plus unit/integration tests for each new endpoint.
 
 Done when: the race tests pass.
 
-Plan first, wait for my OK. Branch s07-lifecycle. PR "feat: reschedule, cancel,
+Plan first, wait for my OK. Branch feature/s07-lifecycle from dev. PR into dev: "feat: reschedule, cancel,
 idempotency and rate limits".
 ```
 
@@ -220,7 +227,7 @@ race test: 2 workers × 500 jobs → each runs exactly once.
 
 Done when: the 2-worker test passes.
 
-Plan first, wait for my OK. Branch s08-worker. PR "feat: postgres-backed worker with
+Plan first, wait for my OK. Branch feature/s08-worker from dev. PR into dev: "feat: postgres-backed worker with
 outbox".
 ```
 
@@ -245,7 +252,7 @@ digest runs once per org per day; Mailpit receives a real email in an integratio
 
 Done when: the cancelled-booking reminder test passes.
 
-Plan first, wait for my OK. Branch s09-notifications. PR "feat: email notifications and
+Plan first, wait for my OK. Branch feature/s09-notifications from dev. PR into dev: "feat: email notifications and
 reminders".
 ```
 
@@ -270,7 +277,7 @@ hold; SSRF cases rejected; retry schedule with a frozen Clock.
 
 Done when: one cancellation → signed webhook + waitlist hold, end to end.
 
-Plan first, wait for my OK. Branch s10-waitlist-webhooks. PR "feat: waitlist offers and
+Plan first, wait for my OK. Branch feature/s10-waitlist-webhooks from dev. PR into dev: "feat: waitlist offers and
 signed webhooks".
 ```
 
@@ -293,7 +300,7 @@ Schemathesis contract job. loadtest/locustfile.py with a booking-heavy profile a
 Done when: contract job is green; p95 for POST /holds < 300 ms at 50 req/s locally (put the
 numbers and machine specs in the PR).
 
-Plan first, wait for my OK. Branch s11-observability. PR "feat: tracing, metrics and
+Plan first, wait for my OK. Branch feature/s11-observability from dev. PR into dev: "feat: tracing, metrics and
 hardening".
 ```
 
@@ -306,10 +313,16 @@ Read CLAUDE.md, docs/plan.md sections "CI/CD and deployment" and "Definition of 
 and docs/progress.md.
 
 Goal: session 12, Ship it. Host: <Fly.io or Render — tell Claude which>.
-Build: .github/workflows/deploy.yml (build image once tagged with SHA → GHCR; release
-command runs alembic upgrade head; deploy API ×2 + worker ×1 to staging; wait for
-/health/ready; smoke suite; manual approval via the `production` GitHub Environment; repeat
-for production; GitHub release from conventional commits). Host config files. tests/smoke
+Build the three workflows in docs/plan.md "Deploy workflows":
+- deploy-uat.yml on push to uat: build image once tagged with SHA → GHCR; alembic upgrade
+  head as a release command; deploy API ×2 + worker ×1 to UAT using the `uat` GitHub
+  Environment; wait for /health/ready; smoke suite.
+- release-check.yml on push to release: full suite, load test with p95 in the job summary,
+  CHANGELOG.md entry matches the version in pyproject.toml.
+- deploy-prod.yml on push to main: reuse the SHA image; manual approval via the `production`
+  Environment; migrate, deploy, smoke; GitHub release + tag vX.Y.Z from conventional commits
+  (the workflow creates the tag; cloud sessions can't push tags).
+Also CHANGELOG.md starting at v0.1.0, host config files, tests/smoke
 suite pointed at a BASE_URL. scripts/seed.py (demo clinic: 3 providers, 5 services, 2 weeks
 of bookings). docs/runbook.md (one entry per alert + worker stuck, DB at connection limit,
 email provider down, roll back a deploy). docs/adr/0001–0004 (exclusion constraint vs
@@ -318,9 +331,48 @@ per "Definition of done" with the results table.
 List every secret and click-step I must do myself (host account, DB with btree_gist,
 GitHub Environments) in docs/deploy-checklist.md. Never ask me to paste secrets here.
 
-Done when: a merge to main reaches production after one approval.
+Done when: after this PR is merged, promoting dev → uat deploys UAT and promoting
+release → main reaches production after one approval (I'll run the promotions).
 
-Plan first, wait for my OK. Branch s12-ship. PR "feat: deploy pipeline, runbook and docs".
+Plan first, wait for my OK. Branch feature/s12-ship from dev. PR into dev: "feat: deploy pipeline, runbook and docs".
+```
+
+---
+
+## Promotion prompts (run when I decide a milestone is ready; see docs/BRANCHING.md)
+
+**dev → uat:**
+
+```text
+Open a PR from dev into uat titled "promote: dev → uat (<sessions>)". In the description list
+every PR merged into dev since the last promotion, and a "What to test on UAT" checklist built
+from each session's "Done when" line in docs/plan.md. Don't merge it; I will, with a merge commit.
+```
+
+**uat → release (with version bump):**
+
+```text
+We're cutting release v<X.Y.Z>. Step 1: open a PR from uat into release titled
+"release: v<X.Y.Z> candidate", then stop and wait for me to merge it.
+Step 2 (after I say it's merged): branch chore/release-v<X.Y.Z> from release, bump the version
+in pyproject.toml, add the CHANGELOG.md entry from the conventional commits since the last tag,
+and open a PR into release. Don't merge anything.
+```
+
+**release → main:**
+
+```text
+Open a PR from release into main titled "release: v<X.Y.Z>". In the description: the CHANGELOG
+entry, migrations included (and whether each is backwards-compatible), and the rollback plan
+(previous image SHA). Don't merge it; I'll merge with a merge commit and approve the deploy.
+```
+
+**Hotfix:**
+
+```text
+Production bug: <describe>. Branch hotfix/<name> from main, write a failing test that
+reproduces it, fix it, and open a PR into main. After I merge it, open three back-merge PRs
+from main into release, uat and dev. Don't merge anything.
 ```
 
 ---

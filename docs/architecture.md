@@ -282,22 +282,24 @@ Webhook URLs must be HTTPS and must not resolve to private IPs (SSRF guard).
 
 ## 9. Delivery pipeline (sessions 2, 12)
 
+Every change climbs four levels by pull request (full rules in `docs/BRANCHING.md`).
+
 ```mermaid
 flowchart LR
-  PR[Pull request] --> CI{7 CI checks<br/>lint · types · test · concurrency ·<br/>migrations · contract · security}
-  CI -- fail --> FIX[Auto-fix / you fix]
-  FIX --> PR
-  CI -- pass --> MERGE[Squash-merge to main]
-  MERGE --> IMG[Build image once,<br/>tag with SHA → GHCR]
-  IMG --> STG[Migrate + deploy staging]
-  STG --> SMK{Smoke tests}
-  SMK -- fail --> STOP[Stop; prod untouched]
-  SMK -- pass --> APR[Manual approval]
-  APR --> PROD[Migrate + deploy production]
-  PROD --> REL[GitHub release notes]
+  F[feature/sNN] -- "PR · 7 CI checks<br/>squash" --> D[dev]
+  D -- "PR · merge commit" --> U[uat]
+  U -- on merge --> UD[Build image by SHA → GHCR<br/>migrate + deploy UAT<br/>smoke tests]
+  U -- "PR · merge commit" --> R[release]
+  R -- on merge --> RC[Full suite + load test<br/>version + CHANGELOG check]
+  R -- "PR · merge commit<br/>once stable" --> M[main]
+  M -- on merge --> AP[Manual approval]
+  AP --> PD[Migrate + deploy production<br/>same image SHA · smoke]
+  PD --> TG[GitHub release + tag vX.Y.Z]
 ```
 
-Same image in staging and production, so what passed staging is byte-for-byte what ships.
+Every PR into any of the four branches runs the `branch-flow` check (no skipped levels) and the
+seven CI checks: lint, types, test, concurrency, migrations, contract, security. The image is
+built once per commit, so what passed UAT is byte-for-byte what reaches production.
 Rollback = redeploy the previous SHA, which is why migrations must be backwards-compatible.
 
 ---

@@ -1,5 +1,8 @@
-## Session
-Session <N> — <name> (see docs/plan.md, "The 12 sessions")
+## Type
+- [ ] Session <N> — <name> (feature/* → dev)
+- [ ] Fix / docs / chore (→ dev)
+- [ ] Promotion: dev → uat / uat → release / release → main
+- [ ] Hotfix (hotfix/* → main) or back-merge (main → release/uat/dev)
 
 ## What changed
 -
@@ -22,6 +25,7 @@ make lint && make test
 -
 
 ## Checklist
+- [ ] Base branch follows docs/BRANCHING.md (feature → dev; promotions one level at a time)
 - [ ] Matches docs/plan.md (or plan/ADR updated in this PR)
 - [ ] Every new endpoint has success, validation, auth and other-tenant tests
 - [ ] New migration for model changes; no merged migration edited

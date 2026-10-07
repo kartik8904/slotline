@@ -20,6 +20,18 @@ every session; you read the "What I should understand" lists before interviews.
 
 ---
 
+## Setup — repository organised (2026-10-07)
+
+**Built:**
+- Docs moved under `docs/`; `.claude/settings.json`, PR template and `.gitignore` in place
+- `docs/plan.md` added from the Slotline Build Plan doc, updated for the branch flow
+- Branch flow feature → dev → uat → release → main (`docs/BRANCHING.md`), enforced by `.github/workflows/branch-flow.yml`
+- Branches `dev`, `uat`, `release` created from `main`
+
+**Carried forward / TODO:**
+- Set `dev` as default branch and add rulesets (manual, `docs/START-HERE.md` section 2)
+- Decide the known gaps in `docs/PROJECT-OVERVIEW.md` section 14 before sessions 3, 7, 9
+
 <!-- Entry template — copy above this line for each session
 
 ## Session N — <name> (YYYY-MM-DD)
