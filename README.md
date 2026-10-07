@@ -27,8 +27,8 @@ Read in this order:
 | --- | --- |
 | `dev` (default) | Integration; every feature PR lands here |
 | `uat` | Testing; deploys to UAT |
-| `release` | Release candidate |
-| `main` | Production |
+| `release` | **Production**; deploys after approval |
+| `main` | Stable record of releases proven in production |
 
 ## Stack
 
@@ -51,4 +51,4 @@ _Filled in at session 12._
 | Hold latency | p95 at 50 requests/second | |
 | Availability latency | p95, 7 days × 3 providers | |
 | Automation reliability | 2 workers, 500 jobs, each exactly once | |
-| Test coverage | pytest-cov on main | |
+| Test coverage | pytest-cov on release | |

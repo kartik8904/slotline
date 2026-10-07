@@ -9,7 +9,7 @@ sessions. After the first week you only need section 4 and `docs/session-prompts
 | --- | --- | --- | --- |
 | 1 | `docs/PROJECT-OVERVIEW.md` | What Slotline is, who uses it, features, known gaps | 15 min |
 | 2 | `docs/architecture.md` | How the API, worker and Postgres flow, with diagrams | 30 min |
-| 3 | `docs/BRANCHING.md` | feature → dev → uat → release → main | 10 min |
+| 3 | `docs/BRANCHING.md` | feature → dev → uat → release (production) → main | 10 min |
 | 4 | `docs/LOCAL-SETUP.md` | Get it onto your Mac | 20 min (doing) |
 | 5 | This file, sections 2–4 | Cloud setup and the working loop | 20 min (doing) |
 | 6 | `docs/session-prompts.md` | The prompt for each session | per session |

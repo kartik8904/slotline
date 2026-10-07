@@ -3,16 +3,19 @@
 Every change moves through five levels. Nothing skips a level, and nothing is pushed
 directly to `dev`, `uat`, `release` or `main`: every move is a pull request.
 
+**`release` is production.** Merging into `release` deploys to production (after one approval).
+**`main` is the stable record**: it's updated only after a release has run cleanly in
+production, so `main` always holds the last known-good production code.
+
 ```mermaid
 flowchart LR
   F["feature/*<br/>one session's work"] -- "PR · squash" --> D[dev<br/>integration]
-  D -- "PR · merge commit" --> U[uat<br/>testing]
-  U -- "PR · merge commit" --> R[release<br/>release candidate]
-  R -- "PR · merge commit<br/>once stable" --> M[main<br/>production]
-  H["hotfix/*"] -- "PR" --> M
-  M -. "back-merge after hotfix" .-> R
-  M -. back-merge .-> U
-  M -. back-merge .-> D
+  D -- "PR · merge commit" --> U[uat<br/>testing · UAT env]
+  U -- "PR · merge commit<br/>release checks must pass" --> R[release<br/>PRODUCTION]
+  R -- "PR · merge commit<br/>once stable" --> M[main<br/>stable record]
+  H["hotfix/*"] -- "PR" --> R
+  R -. "back-merge after hotfix" .-> U
+  R -. back-merge .-> D
 ```
 
 ## What each branch means
@@ -20,14 +23,26 @@ flowchart LR
 | Branch | Holds | Created from | Merges into | What happens on merge | Environment |
 | --- | --- | --- | --- | --- | --- |
 | `feature/sNN-name` | One session's work (one PR) | `dev` | `dev` | 7 CI checks must pass | none |
-| `fix/name`, `docs/name`, `chore/name` | Small non-session changes | `dev` | `dev` | 7 CI checks must pass | none |
-| `dev` | Integrated work, may be unfinished | — | `uat` | CI runs on the merged result | none (saves cost) |
+| `fix/`, `docs/`, `chore/` | Small non-session changes, version bumps | `dev` | `dev` | 7 CI checks must pass | none |
+| `dev` | Integrated work | — | `uat` | CI on the merged result | none (saves cost) |
 | `uat` | What you're testing by hand | — | `release` | Deploy to **UAT** + smoke tests | UAT (from session 12) |
-| `release` | Frozen release candidate | — | `main` | Full suite + load test, version and changelog checked | none |
-| `main` | Exactly what runs in production | — | — | Manual approval → deploy **production** → GitHub release + tag `vX.Y.Z` | Production (from session 12) |
-| `hotfix/name` | Urgent production fix | `main` | `main` | Same as `main`, then back-merge | — |
+| `release` | **What runs in production** | — | `main` | Approval → deploy **production** → smoke → GitHub release + tag `vX.Y.Z` | Production (from session 12) |
+| `main` | Last release that proved stable in production | — | — | CI only; no deploy | none |
+| `hotfix/name` | Urgent production fix | `release` | `release` | Same as `release`, then back-merge | — |
 
-Until session 12 sets up hosting, `uat` and `main` only run CI; the deploy steps are added then.
+Until session 12 sets up hosting, `uat` and `release` only run CI; the deploy steps are added then.
+
+## The release gate
+
+Because merging into `release` ships to production, the checks run **on the PR from `uat`
+into `release`, before you can merge**:
+
+- the seven CI checks and `branch-flow`
+- `release-check`: full test suite, load test (p95 in the job summary), and the version in
+  `pyproject.toml` has a matching `CHANGELOG.md` entry with no existing tag
+- the PR is from `uat`, and that `uat` commit has deployed to UAT and passed smoke tests
+
+Merge only after you've tested the change on UAT.
 
 ## The two merge rules that keep branches in sync
 
@@ -46,53 +61,62 @@ git switch -c feature/s03-auth                 # Claude does this in cloud sessi
 gh pr create --base dev --fill                 # PR into dev
 ```
 
-Review the PR, wait for CI, then **Squash and merge** on GitHub. Delete the feature branch
-(GitHub offers a button; Claude's cloud proxy can't delete branches, so do it on GitHub).
+Review the PR, wait for CI, then **Squash and merge**. Delete the feature branch on GitHub
+(cloud sessions can't delete branches).
 
-## Promotion flow (when a set of sessions is ready to test)
-
-Typical rhythm: promote to `uat` after every 1–2 sessions, to `release` and `main` at the
-milestones in the table below.
+## Promotion flow
 
 ```bash
-# 1. dev → uat: start testing
-gh pr create --base uat --head dev --title "promote: dev → uat (sessions 3–4)" --body "What to test: ..."
-#    Merge with "Create a merge commit". Test on UAT (or locally from the uat branch until session 12).
+# 0. Bump the version on dev (any chore/ branch → dev, squash):
+#    pyproject.toml version + CHANGELOG.md entry for vX.Y.Z
 
-# 2. uat → release: freeze a candidate
-gh pr create --base release --head uat --title "release: v0.3.0 candidate"
-#    Merge commit. Release checks run (full suite, load test). Bump version + CHANGELOG on a
-#    chore/release-v0.3.0 branch from release if needed (PR into release).
+# 1. dev → uat: deploys UAT; test there
+gh pr create --base uat --head dev --title "promote: dev → uat (v0.3.0)" --body "What to test: ..."
+#    Merge with "Create a merge commit".
 
-# 3. release → main: ship once stable
-gh pr create --base main --head release --title "release: v0.3.0"
-#    Merge commit. Approve the production deployment. The workflow tags v0.3.0.
+# 2. uat → release: ship to production
+gh pr create --base release --head uat --title "release: v0.3.0"
+#    Wait for release-check to pass, merge (merge commit), approve the production deployment.
+#    The workflow tags v0.3.0 and creates the GitHub release.
+
+# 3. release → main: record it as stable
+gh pr create --base main --head release --title "stable: v0.3.0"
+#    Merge commit, once v0.3.0 has been stable in production.
 ```
 
-**"Stable" means:** UAT tested against the session's *Done when* line, CI and release checks
-green, no open bugs labelled `blocker`. After session 12, also 24 hours on UAT with no alerts.
+**"Stable" means:** v0.x running in production for at least 24 hours with no alerts, no
+rollback, and no open bugs labelled `blocker`. Before session 12 (no hosting yet): CI and
+release checks green and the session's *Done when* verified locally.
 
 ## Hotfix flow
 
 ```bash
-git switch main && git pull
+git switch release && git pull
 git switch -c hotfix/hold-expiry-timezone
-# fix + test
-gh pr create --base main --fill          # merge commit; deploys to production after approval
-# then bring the fix back down so it isn't lost on the next promotion:
-gh pr create --base release --head main --title "back-merge: hotfix into release"
-gh pr create --base uat     --head main --title "back-merge: hotfix into uat"
-gh pr create --base dev     --head main --title "back-merge: hotfix into dev"
+# failing test + fix + PATCH version bump and CHANGELOG entry (v0.4.0 → v0.4.1)
+gh pr create --base release --fill       # merge commit; deploys to production after approval
+# then bring the fix back down so the next promotion doesn't undo it:
+gh pr create --base uat  --head release --title "back-merge: v0.4.1 into uat"
+gh pr create --base dev  --head release --title "back-merge: v0.4.1 into dev"
+# and once stable:
+gh pr create --base main --head release --title "stable: v0.4.1"
 ```
+
+## Rollback
+
+Production runs whatever `release` points to, deployed as an image tagged with the commit SHA.
+To roll back, re-run the production deploy for the previous release's SHA (GitHub Actions →
+deploy-prod → Run workflow with the old SHA), then fix forward with a hotfix. `main` tells you
+the last version known to be good.
 
 ## Versioning
 
 Semantic versioning `MAJOR.MINOR.PATCH`, starting at `v0.1.0`.
-- Each release from `release` → `main` bumps MINOR (`v0.3.0` → `v0.4.0`).
-- Each hotfix bumps PATCH (`v0.4.0` → `v0.4.1`).
+- Each promotion to `release` bumps MINOR (`v0.3.0` → `v0.4.0`), done on `dev` first.
+- Each hotfix bumps PATCH (`v0.4.0` → `v0.4.1`), done on the hotfix branch.
 - `v1.0.0` = session 12 done and the Definition of Done in `docs/plan.md` is met.
 
-Tags are created by the deploy workflow on `main` (cloud sessions can't push tags).
+Tags are created by the production deploy workflow (cloud sessions can't push tags).
 
 ## Suggested milestones
 
@@ -113,18 +137,20 @@ then start from `dev`.
 ruleset, target those four branches):
 - Restrict deletions; block force pushes
 - Require a pull request before merging (0 approvals is fine solo)
-- Require status checks: `branch-flow` now; add the 7 CI jobs after session 2 has run once
+- Require status checks: `branch-flow` now; add the 7 CI jobs after session 2 has run once,
+  and `release-check` on `release` after session 12
 - Allowed merge methods: **squash** for `dev`; **merge** for `uat`, `release`, `main`
-  (create two rulesets if you want different merge methods)
+  (two rulesets if you want different merge methods)
 
-**3. Merge buttons** (Settings → General → Pull Requests): enable both "Allow merge commits"
-and "Allow squash merging"; disable "Allow rebase merging". Turn on "Automatically delete head
+**3. Merge buttons** (Settings → General → Pull Requests): enable "Allow merge commits" and
+"Allow squash merging"; disable "Allow rebase merging". Turn on "Automatically delete head
 branches".
 
-**4. Environments (session 12):** `uat` (no approval) and `production` (you as required
-reviewer, deployment branch: `main` only).
+**4. Environments (session 12):** `uat` (deployment branch: `uat`, no approval) and
+`production` (deployment branch: `release` only, you as required reviewer).
 
 ## Enforcement
 
 `.github/workflows/branch-flow.yml` fails any PR that skips a level, for example `feature/*`
-straight into `uat`, or `dev` straight into `main`. Make it a required check (step 2 above).
+straight into `uat`, `dev` straight into `release`, or anything other than `release` into
+`main`. Make it a required check (step 2 above).

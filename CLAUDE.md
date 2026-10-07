@@ -21,14 +21,17 @@ Log of finished sessions: `docs/progress.md`. Read its last entry at the start o
 - Conventional commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`).
 
 ## Branches (full rules: `docs/BRANCHING.md`)
-- Flow: `feature/*` → `dev` → `uat` → `release` → `main`. `main` is production.
+- Flow: `feature/*` → `dev` → `uat` → `release` → `main`. **`release` is production**;
+  `main` is the stable record, updated only after a release proves stable.
 - Session work: branch from the latest `dev` as `feature/s<NN>-<short-name>`
   (e.g. `feature/s06-bookings-core`); other changes use `fix/`, `docs/` or `chore/`.
   Open the PR with base **`dev`**. Never target `uat`, `release` or `main` from a feature branch.
 - Never commit or push directly to `dev`, `uat`, `release` or `main`, and never merge PRs. I merge.
 - Promotions (`dev`→`uat`→`release`→`main`) and hotfixes happen only when I ask, as PRs
-  between those branches, never squashed or rebased.
-- Workflows that deploy: `uat` branch → UAT environment, `main` branch → production.
+  between those branches, never squashed or rebased. Hotfixes branch from `release` and
+  target `release`; afterwards back-merge `release` into `uat` and `dev`.
+- Workflows that deploy: `uat` branch → UAT environment, `release` branch → production.
+  `main` never deploys.
 - Before saying a task is done: `make lint && make test` pass. Paste the summary lines in the PR.
 - PR description: what changed, why, how to test it, test output, and **"Things to understand"**:
   3–5 bullets on the trickiest code in the PR, written so a junior engineer could explain them.

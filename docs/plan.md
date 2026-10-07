@@ -1,7 +1,7 @@
 # Slotline Build Plan
 
 Source: the "Slotline Build Plan" doc (5 Oct 2026), with the branch flow from
-`docs/BRANCHING.md` applied (7 Oct 2026). Diagrams live in `docs/architecture.md`.
+`docs/BRANCHING.md` applied (7 Oct 2026; `release` is production, `main` is the stable record). Diagrams live in `docs/architecture.md`.
 
 ## Overview
 
@@ -11,7 +11,7 @@ Slotline is a multi-tenant booking API for clinics, salons and similar businesse
 
 - Correctness is enforced by the database, not by hope: a Postgres exclusion constraint makes overlapping bookings impossible, and a test proves it under 200 concurrent requests.
 - Every write is safe to retry (idempotency keys), every request is traceable (request IDs, structured logs, traces), and every failure returns one consistent error shape.
-- Nothing reaches production without passing lint, type checks, tests, a migration check and a security scan in CI, then moving through `dev` → `uat` → `release` → `main`. Merges to `uat` deploy to UAT automatically; production deploys from `main` after one approval.
+- Nothing reaches production without passing lint, type checks, tests, a migration check and a security scan in CI, then moving through `dev` → `uat` → `release`. Merges to `uat` deploy to UAT automatically; merges to `release` deploy production after one approval; `main` records each release once it has proved stable.
 - Automation runs in a worker process that survives restarts, retries with backoff, and never sends the same reminder twice.
 - Someone else can run it from the README in under 10 minutes.
 
@@ -300,8 +300,8 @@ slotline/
 │   ├── workflows/branch-flow.yml  # enforces feature → dev → uat → release → main
 │   ├── workflows/ci.yml       # every PR into dev/uat/release/main and every push to them
 │   ├── workflows/deploy-uat.yml   # push to uat → UAT environment (session 12)
-│   ├── workflows/release-check.yml # push to release → full suite + load test (session 12)
-│   ├── workflows/deploy-prod.yml  # push to main → approval → production + tag (session 12)
+│   ├── workflows/release-check.yml # PR into release → full suite + load test + version gate (session 12)
+│   ├── workflows/deploy-prod.yml  # push to release → approval → production + tag (session 12)
 │   ├── pull_request_template.md
 │   └── dependabot.yml
 ├── alembic/versions/          # one migration per change, never edited after merge
@@ -359,7 +359,7 @@ Tests run against a real Postgres, never SQLite or mocks, because the guarantee 
 | Worker | Each job handler, retries, dead-lettering, dedupe, shutdown | pytest with a frozen Clock | Every PR and push |
 | Contract | The API never returns something its OpenAPI spec doesn't allow, and never 500s on fuzzed input | Schemathesis | Every PR |
 | Migrations | `upgrade head`, `downgrade -1`, `upgrade head` again; autogenerate finds no drift | Alembic | Every PR |
-| Load | p95 latency for availability and holds at 50 requests per second | Locust | Every push to `release`, results in README |
+| Load | p95 latency for availability and holds at 50 requests per second | Locust | Every PR into `release`, results in README |
 | Smoke | Health, login, one hold and confirm against the deployed URL | A short pytest suite pointed at a URL | After every UAT and production deploy |
 
 ### The concurrency proof
@@ -393,7 +393,7 @@ A parametrised test creates two organisations and calls every endpoint as org A 
 
 ## CI/CD and deployment
 
-Every change reaches production through four pull requests: feature → `dev` → `uat` → `release` → `main` (rules in `docs/BRANCHING.md`). Every PR must pass the branch-flow check and seven CI checks; merging to `uat` deploys to UAT automatically; merging to `main` deploys to production after one approval click.
+Every change reaches production through three pull requests: feature → `dev` → `uat` → `release` (rules in `docs/BRANCHING.md`). **`release` is production**: merging into it deploys after one approval click. `main` is the stable record, updated by a fourth PR from `release` once that version has run cleanly in production. Every PR must pass the branch-flow check and seven CI checks; merging to `uat` deploys to UAT automatically; PRs into `release` must also pass `release-check`.
 
 Diagram: `docs/architecture.md` section 9.
 
@@ -405,8 +405,8 @@ The image is built once per commit, so what passed UAT is byte for byte what rea
 | --- | --- | --- |
 | `dev` | branch-flow + 7 CI checks | 7 CI checks |
 | `uat` | branch-flow + 7 CI checks | CI, build image, migrate + deploy **UAT**, smoke tests |
-| `release` | branch-flow + 7 CI checks | Full suite + load test; check version and CHANGELOG |
-| `main` | branch-flow + 7 CI checks | Approval → migrate + deploy **production** (same image SHA) → smoke → GitHub release + tag |
+| `release` | branch-flow + 7 CI checks + **release-check** (full suite, load test, version and CHANGELOG) | Approval → migrate + deploy **production** (same image SHA) → smoke → GitHub release + tag |
+| `main` | branch-flow + 7 CI checks | CI only; marks the release as stable |
 
 ### ci.yml: on every pull request into, and every push to, dev, uat, release and main
 
@@ -431,16 +431,16 @@ Protect `dev`, `uat`, `release` and `main`: require a pull request, the branch-f
 3. Deploy the API (2 instances) and the worker (1 instance) to UAT; wait for `/health/ready`.
 4. Run the smoke suite against the UAT URL.
 
-**release-check.yml (push to `release`):** full test suite, the load test against a local stack with p95 posted as a job summary, and a check that `CHANGELOG.md` has an entry for the version in `pyproject.toml`.
+**release-check.yml (pull request into `release`):** full test suite, the load test against a local stack with p95 posted as a job summary, and a check that `CHANGELOG.md` has an entry for the version in `pyproject.toml` and that no tag for that version exists yet. It runs before the merge because the merge ships to production.
 
-**deploy-prod.yml (push to `main`):**
+**deploy-prod.yml (push to `release`, or run manually with a SHA for rollback):**
 
 1. Reuse the image already built for that commit (build it if missing).
-2. Wait for manual approval (a GitHub Environment named `production` with you as the required reviewer and `main` as its only deployment branch).
+2. Wait for manual approval (a GitHub Environment named `production` with you as the required reviewer and `release` as its only deployment branch).
 3. Run `alembic upgrade head` against production, deploy API and worker, wait for `/health/ready`, run the smoke suite.
 4. Create a GitHub release and tag `vX.Y.Z` with notes generated from the conventional commits. Tags are created here because cloud sessions can't push tags.
 
-**Rollback:** redeploy the previous SHA's image. This only works if migrations are backwards-compatible, so follow expand-then-contract: add a column in one release, start using it in the next, drop the old one in a third. Never rename a column in a single step.
+**Rollback:** run deploy-prod manually with the previous release's SHA to redeploy its image, then fix forward with a `hotfix/*` branch into `release`. `main` shows the last version known to be stable. This only works if migrations are backwards-compatible, so follow expand-then-contract: add a column in one release, start using it in the next, drop the old one in a third. Never rename a column in a single step.
 
 **Hosting now:** Fly.io or Render with a managed Postgres that supports btree_gist and a small managed Redis. Keep costs near zero with one small instance per process on UAT. **Hosting in July (Brahmastra P9):** the same image on AWS ECS Fargate with RDS Postgres, ElastiCache Redis, Secrets Manager and CloudWatch alarms, defined in Terraform.
 
@@ -491,7 +491,7 @@ You should be able to answer "is it working, and if not, where?" in under two mi
 
 ## Build plan with Claude cloud sessions
 
-Build Slotline in 12 cloud sessions, one pull request into `dev` each, about two sessions a week. You write the plan and the tests' intent, Claude writes most of the code, and you merge only what you can explain line by line (your own Brahmastra rule). Promote `dev` → `uat` → `release` → `main` at the milestones in `docs/BRANCHING.md`.
+Build Slotline in 12 cloud sessions, one pull request into `dev` each, about two sessions a week. You write the plan and the tests' intent, Claude writes most of the code, and you merge only what you can explain line by line (your own Brahmastra rule). Promote `dev` → `uat` → `release` (production) at the milestones in `docs/BRANCHING.md`, then `release` → `main` once each release is stable.
 
 ### One-time setup (about 1 hour)
 
@@ -533,7 +533,7 @@ The "wait for my OK" step is where you learn: check the plan against this docume
 | 9 | Notifications | Notifier protocol, Mailpit + one provider, templates, confirmations, reminders, cancel and reschedule notices, daily digest | Reminders never send for a cancelled booking (test with a frozen clock) |
 | 10 | Waitlist and webhooks | waitlist endpoints and offer flow, webhook endpoints, signing, deliveries with retries, SSRF guard | A cancellation produces a signed webhook and a waitlist hold |
 | 11 | Observability and hardening | OpenTelemetry, Prometheus metrics, Sentry, security headers, Schemathesis job switched on, load test | Contract job green; p95 for holds under 300 ms at 50 requests a second locally |
-| 12 | Ship it | deploy-uat.yml, release-check.yml, deploy-prod.yml, UAT and production on the host, smoke tests, seed demo data, runbook, ADRs, README with results | A change goes dev → uat (deployed) → release → main and reaches production after one approval |
+| 12 | Ship it | deploy-uat.yml, release-check.yml, deploy-prod.yml, UAT and production on the host, smoke tests, seed demo data, runbook, ADRs, README with results | A change goes dev → uat (deployed to UAT) → release (deployed to production after one approval) → main |
 
 Keep DSA, the Claude track and your job running alongside; if a week slips, cut session 11's polish before cutting tests.
 
@@ -544,8 +544,8 @@ Slotline is done when a stranger can run it, a reviewer can verify its claims fr
 - [ ] Live production URL with Swagger docs and seeded demo clinic data
 - [ ] README first screen: what it is, the architecture diagram, and the results table below
 - [ ] Concurrency proof test output pasted into the README
-- [ ] CI green on all four protected branches; UAT deploys on merge to `uat`; production deploys from `main` after approval
-- [ ] `v1.0.0` tagged and released from `main`
+- [ ] CI green on all four protected branches; UAT deploys on merge to `uat`; production deploys on merge to `release` after approval
+- [ ] `v1.0.0` tagged and released from `release`, then recorded on `main` as stable
 - [ ] Worker running in production; a real reminder email received for a test booking
 - [ ] Signed webhook verified by a 20-line receiver script in `examples/`
 - [ ] Load-test numbers and the machine they ran on
@@ -562,7 +562,7 @@ Slotline is done when a stranger can run it, a reviewer can verify its claims fr
 | Hold latency | p95 at 50 requests a second | |
 | Availability latency | p95 for a 7-day, 3-provider query | |
 | Automation reliability | 2 workers, 500 jobs, each run exactly once | |
-| Test coverage | pytest-cov on main | |
+| Test coverage | pytest-cov on release | |
 
 **Stretch goals, in order of value for Vaani and your profile:** an MCP server exposing find_slots, hold, confirm, reschedule and cancel (it becomes P6 directly); Google Calendar two-way sync; WhatsApp reminders through a business messaging provider; Postgres row-level security; group classes with capacity above one; a small Angular admin screen built on your existing front-end skills.
 

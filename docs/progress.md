@@ -28,6 +28,9 @@ every session; you read the "What I should understand" lists before interviews.
 - Branch flow feature → dev → uat → release → main (`docs/BRANCHING.md`), enforced by `.github/workflows/branch-flow.yml`
 - Branches `dev`, `uat`, `release` created from `main`
 
+**Decisions:**
+- `release` deploys to production; `main` is the stable record, updated after a release proves stable; hotfixes go into `release` (BRANCHING.md, plan.md updated)
+
 **Carried forward / TODO:**
 - Set `dev` as default branch and add rulesets (manual, `docs/START-HERE.md` section 2)
 - Decide the known gaps in `docs/PROJECT-OVERVIEW.md` section 14 before sessions 3, 7, 9

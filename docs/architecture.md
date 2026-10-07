@@ -282,25 +282,25 @@ Webhook URLs must be HTTPS and must not resolve to private IPs (SSRF guard).
 
 ## 9. Delivery pipeline (sessions 2, 12)
 
-Every change climbs four levels by pull request (full rules in `docs/BRANCHING.md`).
+Every change climbs the levels by pull request (full rules in `docs/BRANCHING.md`).
+`release` is production; `main` records each release once it has proved stable.
 
 ```mermaid
 flowchart LR
   F[feature/sNN] -- "PR · 7 CI checks<br/>squash" --> D[dev]
   D -- "PR · merge commit" --> U[uat]
   U -- on merge --> UD[Build image by SHA → GHCR<br/>migrate + deploy UAT<br/>smoke tests]
-  U -- "PR · merge commit" --> R[release]
-  R -- on merge --> RC[Full suite + load test<br/>version + CHANGELOG check]
-  R -- "PR · merge commit<br/>once stable" --> M[main]
-  M -- on merge --> AP[Manual approval]
+  U -- "PR · merge commit<br/>+ release-check:<br/>full suite, load test, version" --> R[release]
+  R -- on merge --> AP[Manual approval]
   AP --> PD[Migrate + deploy production<br/>same image SHA · smoke]
   PD --> TG[GitHub release + tag vX.Y.Z]
+  R -- "PR · merge commit<br/>once stable" --> M[main<br/>stable record]
 ```
 
 Every PR into any of the four branches runs the `branch-flow` check (no skipped levels) and the
 seven CI checks: lint, types, test, concurrency, migrations, contract, security. The image is
 built once per commit, so what passed UAT is byte-for-byte what reaches production.
-Rollback = redeploy the previous SHA, which is why migrations must be backwards-compatible.
+Rollback = redeploy the previous release SHA (then hotfix into `release`), which is why migrations must be backwards-compatible.
 
 ---
 

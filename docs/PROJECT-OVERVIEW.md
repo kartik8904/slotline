@@ -104,7 +104,7 @@ Booking looks simple but breaks in real life:
 
 **Operations**
 - Health checks, structured logs, traces, metrics, error tracking
-- Branch flow feature → dev → uat → release → main; seven-check CI on every PR; automatic UAT deploy; one-click production deploy from main; rollback by image SHA
+- Branch flow feature → dev → uat → release → main; seven-check CI on every PR; automatic UAT deploy; one-click production deploy from release; main records stable releases; rollback by image SHA
 
 ## 7. A day in the life (end-to-end example)
 
