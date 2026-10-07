@@ -3,7 +3,8 @@
 Multi-tenant booking API (FastAPI + Postgres 17) that can never double-book a provider,
 plus a worker for holds, reminders, waitlist offers and signed webhooks.
 
-**Read before any change:** `docs/plan.md` (the spec) and `docs/architecture.md` (how it flows).
+**Read before any change:** `docs/plan.md` (the spec, including its **Clarifications** table,
+which overrides earlier sections) and `docs/architecture.md` (how it flows).
 Log of finished sessions: `docs/progress.md`. Read its last entry at the start of every session.
 
 ## Commands
@@ -15,7 +16,8 @@ Log of finished sessions: `docs/progress.md`. Read its last entry at the start o
 - `make seed`      — demo clinic data
 
 ## How we work
-- One session = one PR = one row of the 12-session table in `docs/plan.md`.
+- One session = one PR = one row of the 12-session table in `docs/plan.md`. Sessions 6–10 may
+  be split into two PRs (`feature/s06a-…`, `feature/s06b-…`) as listed in Clarification C17.
 - **First reply is always a plan:** files you'll create or change, the tests you'll add, and
   anything in the plan you think is wrong or unclear. Then stop and wait for my OK.
 - Conventional commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`).
