@@ -1,0 +1,221 @@
+# Seven required checks: lint, types, test, concurrency, migrations, contract, security.
+# Job names are the status-check names; keep them in sync with docs/BRANCHING.md.
+name: ci
+
+on:
+  pull_request:
+    branches: [dev, uat, release, main]
+  push:
+    branches: [dev, uat, release, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "1"
+  PGUSER: slotline
+  PGPASSWORD: slotline
+  DATABASE_URL: postgresql+asyncpg://slotline:slotline@localhost:5432/slotline_test
+  TEST_DATABASE_URL: postgresql+asyncpg://slotline:slotline@localhost:5432/slotline_test
+  REDIS_URL: redis://localhost:6379/0
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  types:
+    name: types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      # Same scope as `make lint` (files = src, tests, alembic in pyproject.toml)
+      - run: uv run mypy
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: slotline
+          POSTGRES_PASSWORD: slotline
+          POSTGRES_DB: slotline_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U slotline" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      # Coverage gate (fail_under = 85) comes from pyproject.toml
+      - run: uv run pytest
+
+  concurrency:
+    name: concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_POOL_SIZE: "20"
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: slotline
+          POSTGRES_PASSWORD: slotline
+          POSTGRES_DB: slotline_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U slotline" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      # --no-cov: the coverage gate belongs to the `test` job, not to a marker subset
+      - run: uv run pytest -m concurrency --no-cov
+
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: slotline
+          POSTGRES_PASSWORD: slotline
+          POSTGRES_DB: slotline_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U slotline" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      - run: uv run alembic downgrade -1
+      - run: uv run alembic upgrade head
+      - name: Models and migrations agree
+        run: uv run alembic check
+
+  contract:
+    # Placeholder: start the app and fetch the OpenAPI document.
+    # Replace with Schemathesis once there are endpoints worth fuzzing.
+    name: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: slotline
+          POSTGRES_PASSWORD: slotline
+          POSTGRES_DB: slotline_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U slotline" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      - name: Start the app
+        run: |
+          uv run uvicorn slotline.main:create_app --factory --port 8000 --no-access-log \
+            > app.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/api/v1/health/ready && exit 0
+            sleep 1
+          done
+          echo "::error::app did not become ready"
+          cat app.log
+          exit 1
+      - name: Fetch /openapi.json
+        run: |
+          curl -fsS http://127.0.0.1:8000/openapi.json -o openapi.json
+          python3 -c "import json; d = json.load(open('openapi.json')); assert d['paths'], 'no paths'; print(len(d['paths']), 'paths')"
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: pip-audit
+        run: |
+          uv export --frozen --no-emit-project --format requirements-txt -o requirements.audit.txt
+          uvx pip-audit --requirement requirements.audit.txt --no-deps --disable-pip
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: "8.28.0"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks git --redact --verbose --exit-code 1 .
+      - name: Build image
+        run: docker build -t slotline:ci .
+      - name: Trivy image scan
+        env:
+          TRIVY_VERSION: "0.75.0"
+        run: |
+          curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz trivy
+          ./trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 slotline:ci

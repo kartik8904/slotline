@@ -137,8 +137,11 @@ then start from `dev`.
 ruleset, target those four branches):
 - Restrict deletions; block force pushes
 - Require a pull request before merging (0 approvals is fine solo)
-- Require status checks: `branch-flow` now; add the 7 CI jobs after session 2 has run once,
-  and `release-check` on `release` after session 12
+- Require status checks (a check only appears in the picker after it has run once, so merge
+  or open the session 2 PR first). Add all of these, exactly as spelled:
+  `branch-flow`, `lint`, `types`, `test`, `concurrency`, `migrations`, `contract`, `security`
+  (the seven jobs of `.github/workflows/ci.yml`). Add `release-check` on `release` after
+  session 12.
 - Allowed merge methods: **squash** for `dev`; **merge** for `uat`, `release`, `main`
   (two rulesets if you want different merge methods)
 

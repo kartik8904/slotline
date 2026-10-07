@@ -5,8 +5,8 @@ every session; you read the "What I should understand" lists before interviews.
 
 | # | Session | Status | PR |
 | --- | --- | --- | --- |
-| 1 | Skeleton | In review | #3 |
-| 2 | CI | Not started | |
+| 1 | Skeleton | Done | #3 |
+| 2 | CI | In review | |
 | 3 | Tenancy and auth | Not started | |
 | 4 | Catalogue | Not started | |
 | 5 | Availability | Not started | |
@@ -36,6 +36,32 @@ every session; you read the "What I should understand" lists before interviews.
 **Carried forward / TODO:**
 - Set `dev` as default branch and add rulesets (manual, `docs/START-HERE.md` section 2)
 - Decide the known gaps in `docs/PROJECT-OVERVIEW.md` section 14 before sessions 3, 7, 9
+
+## Session 2 — CI (2026-10-07)
+
+**PR:** (link after opening)
+
+**Built:**
+- `.github/workflows/ci.yml`: lint, types, test, concurrency, migrations, contract, security on PRs into and pushes to dev/uat/release/main; Postgres 17 + Redis services, uv cache, `uv sync --frozen`
+- `.github/dependabot.yml`: uv, github-actions, docker; weekly; target `dev`
+- One real `@pytest.mark.concurrency` test: 50 concurrent `/health/ready` with a 20-connection pool
+- `docs/BRANCHING.md` lists the exact check names to mark required
+
+**Decisions** (plan.md / ADR updated?):
+- pytest-xdist deferred; the test job runs plain `pytest` (plan.md updated)
+- `types` runs `mypy` with the same scope as `make lint` (plan.md updated)
+- contract is a placeholder (starts the app, fetches `/openapi.json`); Schemathesis comes later
+- gitleaks runs as the CLI (no action licence needed); Trivy uses `--ignore-unfixed`
+
+**Carried forward / TODO:**
+- Replace the contract placeholder with Schemathesis once endpoints exist (needs approval as a dependency, or run via `uvx`)
+- Add `release-check` to `release` rules after session 12
+- Mark the seven checks required (BRANCHING.md step 2)
+
+**What I should understand:**
+1. Job name = status check name — renaming a job silently un-requires it
+2. Service containers + health checks — jobs wait for Postgres/Redis before steps run
+3. The concurrency job uses `--no-cov` — the coverage gate belongs to `test` only
 
 ## Session 1 — Skeleton (2026-10-07)
 
