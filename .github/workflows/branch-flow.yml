@@ -1,5 +1,6 @@
 # Fails any pull request that skips a level of the branch flow.
-# feature/* → dev → uat → release → main  (hotfix/* → main; main → release/uat/dev back-merges)
+# feature/* → dev → uat → release (production) → main (stable record)
+# hotfix/* → release; release → uat/dev back-merges after a hotfix.
 # See docs/BRANCHING.md. Make "branch-flow" a required status check.
 name: branch-flow
 
@@ -24,17 +25,17 @@ jobs:
           case "$BASE" in
             dev)
               case "$HEAD" in
-                feature/*|fix/*|docs/*|chore/*|test/*|refactor/*|ci/*|dependabot/*|main) ok=true ;;
+                feature/*|fix/*|docs/*|chore/*|test/*|refactor/*|ci/*|dependabot/*|release) ok=true ;;
               esac ;;
             uat)
-              case "$HEAD" in dev|main) ok=true ;; esac ;;
+              case "$HEAD" in dev|release) ok=true ;; esac ;;
             release)
-              case "$HEAD" in uat|main|chore/release-*) ok=true ;; esac ;;
+              case "$HEAD" in uat|hotfix/*) ok=true ;; esac ;;
             main)
-              case "$HEAD" in release|hotfix/*) ok=true ;; esac ;;
+              case "$HEAD" in release) ok=true ;; esac ;;
           esac
           if [ "$ok" != true ]; then
-            echo "::error::'$HEAD' can't merge into '$BASE'. Allowed: feature|fix|docs|chore|test|refactor|ci/* → dev, dev → uat, uat → release, release|hotfix/* → main, main → dev|uat|release (back-merge). See docs/BRANCHING.md."
+            echo "::error::'$HEAD' can't merge into '$BASE'. Allowed: feature|fix|docs|chore|test|refactor|ci/* → dev, dev → uat, uat|hotfix/* → release, release → main, release → uat|dev (back-merge). See docs/BRANCHING.md."
             exit 1
           fi
           echo "Allowed."

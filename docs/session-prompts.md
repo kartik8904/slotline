@@ -3,7 +3,7 @@
 Open a **new** session on claude.ai/code with the `slotline` repo **on the `dev` branch**,
 paste the prompt for that session, and follow the loop in `docs/START-HERE.md` section 4.
 Every session works on `feature/sNN-name` branched from `dev` and opens its PR into `dev`
-(see `docs/BRANCHING.md`). Promotions to `uat`, `release` and `main` use the promotion
+(see `docs/BRANCHING.md`). Promotions to `uat`, `release` (production) and `main` (stable record) use the promotion
 prompts at the bottom.
 
 Every prompt follows the same shape: read context → plan → wait for OK → build → test → PR.
@@ -317,22 +317,24 @@ Build the three workflows in docs/plan.md "Deploy workflows":
 - deploy-uat.yml on push to uat: build image once tagged with SHA → GHCR; alembic upgrade
   head as a release command; deploy API ×2 + worker ×1 to UAT using the `uat` GitHub
   Environment; wait for /health/ready; smoke suite.
-- release-check.yml on push to release: full suite, load test with p95 in the job summary,
-  CHANGELOG.md entry matches the version in pyproject.toml.
-- deploy-prod.yml on push to main: reuse the SHA image; manual approval via the `production`
-  Environment; migrate, deploy, smoke; GitHub release + tag vX.Y.Z from conventional commits
-  (the workflow creates the tag; cloud sessions can't push tags).
+- release-check.yml on pull_request into release: full suite, load test with p95 in the job
+  summary, CHANGELOG.md entry matches the version in pyproject.toml and that tag doesn't exist.
+- deploy-prod.yml on push to release (plus workflow_dispatch with a SHA input for rollback):
+  reuse the SHA image; manual approval via the `production` Environment (deployment branch
+  `release` only); migrate, deploy, smoke; GitHub release + tag vX.Y.Z from conventional
+  commits (the workflow creates the tag; cloud sessions can't push tags).
+- main gets no deploy workflow; it only runs CI.
 Also CHANGELOG.md starting at v0.1.0, host config files, tests/smoke
 suite pointed at a BASE_URL. scripts/seed.py (demo clinic: 3 providers, 5 services, 2 weeks
 of bookings). docs/runbook.md (one entry per alert + worker stuck, DB at connection limit,
-email provider down, roll back a deploy). docs/adr/0001–0004 (exclusion constraint vs
+email provider down, roll back a deploy, ship a hotfix). docs/adr/0001–0004 (exclusion constraint vs
 locking, Postgres queue vs broker, holds with expiry, idempotency storage). README rewrite
 per "Definition of done" with the results table.
 List every secret and click-step I must do myself (host account, DB with btree_gist,
 GitHub Environments) in docs/deploy-checklist.md. Never ask me to paste secrets here.
 
 Done when: after this PR is merged, promoting dev → uat deploys UAT and promoting
-release → main reaches production after one approval (I'll run the promotions).
+uat → release reaches production after one approval (I'll run the promotions).
 
 Plan first, wait for my OK. Branch feature/s12-ship from dev. PR into dev: "feat: deploy pipeline, runbook and docs".
 ```
@@ -349,30 +351,37 @@ every PR merged into dev since the last promotion, and a "What to test on UAT" c
 from each session's "Done when" line in docs/plan.md. Don't merge it; I will, with a merge commit.
 ```
 
-**uat → release (with version bump):**
+**Version bump (on dev, before promoting to uat):**
 
 ```text
-We're cutting release v<X.Y.Z>. Step 1: open a PR from uat into release titled
-"release: v<X.Y.Z> candidate", then stop and wait for me to merge it.
-Step 2 (after I say it's merged): branch chore/release-v<X.Y.Z> from release, bump the version
-in pyproject.toml, add the CHANGELOG.md entry from the conventional commits since the last tag,
-and open a PR into release. Don't merge anything.
+We're preparing release v<X.Y.Z>. Branch chore/version-v<X.Y.Z> from dev, bump the version in
+pyproject.toml, add a CHANGELOG.md entry built from the conventional commits since the last
+tag, and open a PR into dev. Don't merge it.
 ```
 
-**release → main:**
+**uat → release (ships to production):**
 
 ```text
-Open a PR from release into main titled "release: v<X.Y.Z>". In the description: the CHANGELOG
-entry, migrations included (and whether each is backwards-compatible), and the rollback plan
-(previous image SHA). Don't merge it; I'll merge with a merge commit and approve the deploy.
+Open a PR from uat into release titled "release: v<X.Y.Z>". In the description: the CHANGELOG
+entry, every migration included and whether it is backwards-compatible, what was tested on
+UAT, and the rollback plan (the SHA currently on release). Don't merge it; I'll merge with a
+merge commit after release-check passes, then approve the production deploy.
+```
+
+**release → main (once stable in production):**
+
+```text
+v<X.Y.Z> has been stable in production. Open a PR from release into main titled
+"stable: v<X.Y.Z>" with the CHANGELOG entry in the description. Don't merge it.
 ```
 
 **Hotfix:**
 
 ```text
-Production bug: <describe>. Branch hotfix/<name> from main, write a failing test that
-reproduces it, fix it, and open a PR into main. After I merge it, open three back-merge PRs
-from main into release, uat and dev. Don't merge anything.
+Production bug: <describe>. Branch hotfix/<name> from release, write a failing test that
+reproduces it, fix it, bump the PATCH version with a CHANGELOG entry, and open a PR into
+release. After I merge it, open back-merge PRs from release into uat and into dev.
+Don't merge anything.
 ```
 
 ---
@@ -413,6 +422,6 @@ sentences, then fix it. Don't disable tests or lower thresholds.
 **Plan drifted:**
 
 ```text
-Compare the code on main with docs/plan.md. List every place they disagree. Don't change
+Compare the code on dev with docs/plan.md. List every place they disagree. Don't change
 anything yet; I'll decide which one is right.
 ```

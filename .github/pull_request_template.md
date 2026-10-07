@@ -1,8 +1,8 @@
 ## Type
 - [ ] Session <N> — <name> (feature/* → dev)
 - [ ] Fix / docs / chore (→ dev)
-- [ ] Promotion: dev → uat / uat → release / release → main
-- [ ] Hotfix (hotfix/* → main) or back-merge (main → release/uat/dev)
+- [ ] Promotion: dev → uat / uat → release (production) / release → main (stable)
+- [ ] Hotfix (hotfix/* → release) or back-merge (release → uat/dev)
 
 ## What changed
 -
