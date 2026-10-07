@@ -61,7 +61,7 @@ Every business table carries `org_id` (the tenant), `id` (UUID v7, sortable), `c
 | Table | Purpose | Key columns |
 | --- | --- | --- |
 | organizations | A tenant: one clinic or salon | name, slug, timezone, settings jsonb (hold minutes, reminder offsets) |
-| users | Staff who log in | email (unique across all organisations in v1, see C1), password_hash, role (owner, staff), is_active, failed_login_count, locked_until |
+| users | Staff who log in | email (unique across all organisations in v1, see C1), password_hash, role (owner, staff), is_active, failed_login_count, failed_login_window_started_at (C20), locked_until |
 | refresh_tokens | Rotating refresh tokens | user_id, token_hash, family_id, expires_at, revoked_at |
 | api_keys | Machine clients such as Vaani | name, prefix, key_hash, scopes, last_used_at, revoked_at |
 | providers | A person or room that can be booked | name, timezone, is_active |
@@ -149,8 +149,9 @@ All routes live under `/api/v1`, take and return JSON, and authenticate with eit
 | POST /auth/refresh | Public | Rotates the refresh token; reuse of an old one revokes the whole family |
 | POST /auth/logout | Staff | Revokes the current refresh token |
 | GET /me | Any | Current user or key, organisation and scopes |
+| POST /me/password | Staff | Change your own password (`current_password`, `new_password`); signs out your other sessions (C19) |
 | POST, GET, DELETE /api-keys | Owner | Create (key shown once), list, revoke |
-| POST, GET, PATCH, DELETE /users | Owner | Invite and manage staff |
+| POST, GET, PATCH, DELETE /users | Owner | Add and manage staff; the owner sets the initial password and can reset it; delete = deactivate (C19, C28) |
 | POST, GET, PATCH, DELETE /providers | Staff | Manage providers (delete = deactivate) |
 | PUT /providers/{id}/availability | Staff | Replace the weekly working hours in one call |
 | POST, GET, DELETE /providers/{id}/time-off | Staff | Leave and breaks; rejected if it overlaps confirmed bookings unless `force=true` |
@@ -224,6 +225,8 @@ Every error uses one shape, Problem Details (RFC 9457) with a stable `code` fiel
 | 409 | invalid_transition | e.g. confirming a cancelled booking |
 | 409 | customer_exists | A customer with this phone already exists (C3) |
 | 409 | time_off_conflict | Time off overlaps an active booking (C4) |
+| 409 | email_exists | Signup or a new user with an email that is already registered (C22) |
+| 409 | last_owner | Demoting or deactivating an organisation's only active owner (C22) |
 | 409 | request_in_progress | Same idempotency key still running |
 | 410 | hold_expired | Confirming after the hold ran out |
 | 412 | precondition_failed | `If-Match` version mismatch |
@@ -231,6 +234,7 @@ Every error uses one shape, Problem Details (RFC 9457) with a stable `code` fiel
 | 422 | idempotency_key_reused | Same key, different body |
 | 429 | rate_limited | With `Retry-After` |
 | 500 | internal_error | Logged with the request ID; no internals in the body |
+| 503 | service_unavailable | `/health/ready` when Postgres is unreachable |
 
 ### Conventions
 
@@ -474,9 +478,9 @@ You should be able to answer "is it working, and if not, where?" in under two mi
 
 ### Security checklist
 
-- [ ] Passwords hashed with argon2id; API keys stored as SHA-256 hashes, shown once, with a visible prefix (`sl_live_`) so leaked keys are easy to spot
-- [ ] Access tokens expire in 15 minutes; refresh tokens rotate and a reused token revokes its whole family
-- [ ] Every query scoped by `org_id` (enforced by the repository test); Postgres row-level security as a second layer is a stretch goal
+- [x] Passwords hashed with argon2id; API keys stored as SHA-256 hashes, shown once, with a visible prefix (`sl_live_`) so leaked keys are easy to spot
+- [x] Access tokens expire in 15 minutes; refresh tokens rotate and a reused token revokes its whole family
+- [x] Every query scoped by `org_id` (enforced by the repository test); Postgres row-level security as a second layer is a stretch goal
 - [ ] Rate limits on login, signup and all writes; account lockout after 10 failed logins in 15 minutes
 - [ ] CORS closed by default; security headers (HSTS, no-sniff, frame-deny) on every response
 - [ ] Webhook URLs must be HTTPS and must not resolve to private, loopback or link-local addresses (blocks server-side request forgery)
@@ -517,6 +521,16 @@ differ, **the clarification wins**. Each lists the session that implements it.
 | C16 | Load targets | The **gate** is the release-check run on a local stack in GitHub Actions: p95 for `POST /holds` under 300 ms at 50 requests a second. The nightly run against UAT only **reports** numbers (no pass/fail), because UAT runs on the smallest instances. | 11, 12 |
 | C17 | Large sessions | Sessions 6–10 may be split into two PRs (`feature/s06a-…`, `feature/s06b-…`), each reviewable on its own and each passing CI. Suggested splits: 6a schema + holds + constraint test, 6b confirm + direct book + events; 8a jobs table + worker loop, 8b outbox relay + scheduler + hold expiry; 10a waitlist, 10b webhooks. | 6–10 |
 | C18 | Status checks before Session 2 | Session 1's PR merges with only the `branch-flow` check, because CI doesn't exist yet. You run `make lint` and `make test` locally and paste the output in the PR. | 1 |
+| C19 | Staff invites and password changes | v1 has no invite-acceptance or email-reset flow (email doesn't exist until session 9). `POST /users` takes an owner-chosen initial password, and `PATCH /users/{id}` lets the owner reset it, which also clears a lockout and ends that user's sessions. Any logged-in user changes their own password with `POST /me/password` (`current_password`, `new_password`, same 10–128 rule): it revokes all their *other* refresh-token families (the current one is identified by the `fam` claim in the access token), and a wrong current password counts towards lockout and returns `422 validation_error` on `current_password`. Reset by email is a later addition. | 3 |
+| C20 | Lockout window column | C2's "10 failures within 15 minutes" needs a window start, so `users` has `failed_login_window_started_at`. A failure inside the window adds one; the first failure after it starts a new window at 1. The 10th failure sets `locked_until = now + 15 minutes`. Attempts while locked aren't counted and don't extend the lock. A success, a password change, an owner's password reset or reactivation clears all three columns. The rule is the pure function in `domain/lockout.py`, applied under `SELECT … FOR UPDATE` on the user row so parallel guesses can't lose updates. | 3 |
+| C21 | Queries before the tenant is known | Login (by email), refresh (by token hash) and API-key authentication start from a credential, and the credential is what reveals the org. These queries live only in `repositories/credential_lookup.py`; everything after them uses the org-scoped repositories with the `org_id` they found. `OrganizationRepository.create` is the other exception (a new tenant has no org_id yet). The repository scan test allows exactly these and fails for any other method without `org_id` first. | 3 |
+| C22 | New error codes | `email_exists` (409): signup or `POST /users` with an email that is already registered, in any organisation (it says nothing about which). `last_owner` (409): demoting or deactivating an organisation's only active owner; active owners are row-locked so two owners can't demote each other at once. `service_unavailable` (503) from session 1 is now in the error table. Signup stays open until the session 7 rate limit, so `email_exists` allows account enumeration until then. | 3 |
+| C23 | API-key scopes | Scopes are `availability:read`, `customers:read`, `customers:write`, `bookings:read`, `bookings:write`, `waitlist:read`, `waitlist:write`. Creating a key with an unknown or empty scope list is `422`. Staff users hold every scope through their role; keys hold only what was stored. Owner-only and staff-only endpoints (`/users`, `/api-keys`, `/me/password`, logout) return `403` for any key. Routes opened to keys in later sessions declare `require_scope(...)`. | 3 |
+| C24 | Environment and JWT keys | `ENVIRONMENT` (`local`, `test`, `uat`, `production`) is required with no default. `JWT_KEYS` (JSON, `kid` → secret) and `JWT_ACTIVE_KID` are required unless `ENVIRONMENT` is explicitly `local` or `test`, where a built-in development key is used. Otherwise the app refuses to start: keys must be at least 32 bytes, `JWT_ACTIVE_KID` must name one of them, and the development key is rejected. Rotate by adding a `kid`, switching the active one, and removing the old one 15 minutes later. | 3 |
+| C25 | What a request trusts | Access tokens are HS256 JWTs with a `kid` header and claims `iss`, `sub` (user), `org`, `fam` (refresh-token family), `iat`, `exp`. Expiry is checked against the injected `Clock`. The user row is read on every request, so deactivation and role changes apply at once; the role is never taken from the token. Revoking a refresh-token family stops refreshing but doesn't kill an access token already issued, which stays valid for up to 15 minutes unless its user is deactivated. | 3 |
+| C26 | Refresh-token reuse | Rotation claims the token with one atomic `UPDATE … WHERE revoked_at IS NULL RETURNING`, so of parallel requests exactly one wins. Presenting a token that was already rotated revokes the whole family, and that revocation is committed before the `401` is returned (the service raises after leaving `async with uow:`). The detection is strict: there is no grace window, so a client that submits the same refresh twice at once is signed out. | 3 |
+| C27 | Email and password rules | Emails are trimmed, lowercased, at most 254 characters, and must have the shape `x@y.z`; they are stored lowercase (a CHECK enforces it). There is no `email-validator` dependency: deliverability is proved by the email arriving (session 9). New passwords are 10–128 characters; login accepts 1–128 so old or odd passwords still get a plain `401`. Request bodies reject unknown fields, so a body can never carry an `org_id`. | 3 |
+| C28 | Deactivating users | `DELETE /users/{id}` deactivates (`is_active = false`), never removes, so later history keeps its actors. A deactivated user can't log in or refresh, their existing access token stops working at once (C25), and their refresh tokens are revoked. Their email stays reserved forever (C1). Role changes, deactivation and password resets all revoke the user's refresh tokens. | 3 |
 
 Session 0 (the setup check in `docs/session-prompts.md`) is optional and isn't part of the 12-session table.
 

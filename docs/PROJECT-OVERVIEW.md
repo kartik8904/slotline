@@ -191,7 +191,7 @@ The plan is detailed but these are **not yet specified**. Decide each before the
 
 | Gap | Why it matters | Decide before |
 | --- | --- | --- |
-| Password reset and staff invite acceptance | `/users` "invites" staff but there's no accept-invite or reset-password flow | Session 3 |
+| ~~Password reset and staff invite acceptance~~ | Decided in plan C19: owner sets and resets staff passwords, users change their own with `POST /me/password`; email reset comes with session 9 | ~~Session 3~~ |
 | Customer links in emails (cancel link, claim waitlist offer) | Customers don't log in, so these need signed, expiring public tokens and public endpoints | Session 9 |
 | Customer export and delete endpoints | Listed in the security checklist (GDPR / DPDP) but not in the endpoint table or any session | Session 10 or 11 |
 | General admin audit trail | "Admin audit trail" is in scope, but only booking history is designed | Session 7 |
